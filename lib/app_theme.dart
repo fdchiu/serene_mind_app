@@ -149,6 +149,20 @@ const serenePalettes = [
     glassBackground: Color(0x66240328),
     glassBorder: Color(0x33FF6FD8),
   ),
+  SerenePalette(
+    id: 'lilac',
+    name: 'Lunar Bloom',
+    description: 'Iridescent purples for dreamy, spacious breaths.',
+    emoji: '💜',
+    primary: Color(0xFFB388FF),
+    secondary: Color(0xFF8E5CFF),
+    background: Color(0xFF05020C),
+    surface: Color(0xFF120826),
+    heroGradientColors: [Color(0xFF933FFE), Color(0xFFFF8DE7)],
+    backgroundGradientColors: [Color(0xFF080214), Color(0xFF1B0C2D)],
+    glassBackground: Color(0x66120524),
+    glassBorder: Color(0x33933FFE),
+  ),
 ];
 
 SerenePalette paletteById(String id) {

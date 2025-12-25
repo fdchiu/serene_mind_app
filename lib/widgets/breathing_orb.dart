@@ -19,8 +19,19 @@ class BreathingOrb extends StatefulWidget {
 class _BreathingOrbState extends State<BreathingOrb>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller =
-      AnimationController(vsync: this, duration: const Duration(seconds: 8))
+      AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1800),
+      )
         ..repeat();
+
+  double _heartbeatValue(double t) {
+    // Layer two sine waves to mimic a double heartbeat pulse.
+    final primary = math.sin(t * math.pi * 2);
+    final secondary = math.sin(t * math.pi * 4) * 0.5;
+    final composite = (primary + secondary + 2) / 4;
+    return composite.clamp(0, 1);
+  }
 
   @override
   void dispose() {
@@ -40,56 +51,82 @@ class _BreathingOrbState extends State<BreathingOrb>
         child: AnimatedBuilder(
           animation: _controller,
           builder: (context, child) {
-            final value = (math.sin(_controller.value * math.pi * 2) + 1) / 2;
+            final beat = _heartbeatValue(_controller.value);
+            final colorScheme = Theme.of(context).colorScheme;
+            final pulseScale = 0.78 + beat * 0.35;
+            final glowScale = pulseScale + 0.12;
+            final haloScale = pulseScale + 0.25;
             return Stack(
               alignment: Alignment.center,
               children: [
+                ...List.generate(3, (index) {
+                  final rippleProgress =
+                      (_controller.value + index / 3) % 1.0;
+                  final opacity = (1 - rippleProgress).clamp(0.0, 1.0);
+                  final rippleSize =
+                      widget.size * (1.2 + rippleProgress * 1.1);
+                  return Container(
+                    width: rippleSize,
+                    height: rippleSize,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Color.lerp(
+                              colorScheme.primary,
+                              colorScheme.secondary,
+                              0.5,
+                            )!
+                            .withValues(alpha: 0.22 * opacity),
+                        width: 1.5,
+                      ),
+                    ),
+                  );
+                }),
                 Container(
-                  width: widget.size * (1.4 + value * 0.2),
-                  height: widget.size * (1.4 + value * 0.2),
+                  width: widget.size * haloScale,
+                  height: widget.size * haloScale,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.02 + value * 0.05),
+                    color: colorScheme.primary
+                        .withValues(alpha: 0.06 + beat * 0.07),
                     boxShadow: [
                       BoxShadow(
-                        color:
-                            Colors.white.withValues(alpha: 0.1 + value * 0.1),
-                        blurRadius: 60,
-                        spreadRadius: 30,
+                        color: colorScheme.secondary
+                            .withValues(alpha: 0.2 + beat * 0.2),
+                        blurRadius: 50 + beat * 20,
+                        spreadRadius: 20 + beat * 10,
                       ),
                     ],
                   ),
                 ),
                 Container(
-                  width: widget.size * (1.2 + value * 0.1),
-                  height: widget.size * (1.2 + value * 0.1),
+                  width: widget.size * glowScale,
+                  height: widget.size * glowScale,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: LinearGradient(
                       colors: [
-                        const Color(0xFF8AB4FF).withValues(alpha: 0.4),
-                        const Color(0xFFAE96FF).withValues(alpha: 0.4),
+                        colorScheme.primary.withValues(alpha: 0.95),
+                        colorScheme.secondary.withValues(alpha: 0.85),
                       ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFFAE96FF).withValues(alpha: 0.2),
-                        blurRadius: 40,
-                        spreadRadius: 10,
+                        color: colorScheme.secondary.withValues(alpha: 0.3),
+                        blurRadius: 35 + beat * 15,
+                        spreadRadius: 8 + beat * 6,
                       )
                     ],
                   ),
                 ),
                 Container(
-                  width: widget.size,
-                  height: widget.size,
-                  decoration: const BoxDecoration(
+                  width: widget.size * pulseScale,
+                  height: widget.size * pulseScale,
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF8AB4FF), Color(0xFF71D4FF)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
+                    color: colorScheme.primary.withValues(alpha: 0.95),
                   ),
                 ),
               ],
