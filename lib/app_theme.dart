@@ -173,7 +173,31 @@ SerenePalette paletteById(String id) {
 }
 
 ThemeData buildSereneTheme(SerenePalette palette) {
-  final textTheme = GoogleFonts.interTextTheme();
+  final baseTextTheme = ThemeData(brightness: Brightness.dark).textTheme;
+  final bodyTextTheme = GoogleFonts.manropeTextTheme(baseTextTheme);
+
+  TextStyle? displayStyle(TextStyle? base,
+      {FontWeight weight = FontWeight.w600}) {
+    if (base == null) return null;
+    return GoogleFonts.onest(textStyle: base).copyWith(
+      fontWeight: weight,
+      letterSpacing: -0.3,
+    );
+  }
+
+  final textTheme = bodyTextTheme.copyWith(
+    displayLarge: displayStyle(bodyTextTheme.displayLarge, weight: FontWeight.w500),
+    displayMedium:
+        displayStyle(bodyTextTheme.displayMedium, weight: FontWeight.w500),
+    displaySmall:
+        displayStyle(bodyTextTheme.displaySmall, weight: FontWeight.w600),
+    headlineLarge:
+        displayStyle(bodyTextTheme.headlineLarge, weight: FontWeight.w600),
+    headlineMedium:
+        displayStyle(bodyTextTheme.headlineMedium, weight: FontWeight.w600),
+    headlineSmall:
+        displayStyle(bodyTextTheme.headlineSmall, weight: FontWeight.w600),
+  );
   final colorScheme = ColorScheme.dark(
     primary: palette.primary,
     onPrimary: Colors.black,
