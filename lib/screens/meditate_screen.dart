@@ -61,54 +61,73 @@ class _MeditateScreenState extends State<MeditateScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 400),
-          child: switch (_step) {
-            _MeditationStep.duration => _DurationStep(
-                duration: _duration,
-                onDurationChanged: (value) => setState(() => _duration = value),
-                onBegin: () =>
-                    setState(() => _step = _MeditationStep.moodBefore),
-              ),
-            _MeditationStep.moodBefore => _MoodStep(
-                title: 'How are you feeling?',
-                onNext: () => setState(() => _step = _MeditationStep.timer),
-                mood: _moodBefore,
-                onMoodChanged: (value) => setState(() => _moodBefore = value),
-              ),
-            _MeditationStep.timer => MeditationTimer(
-                initialSeconds: _duration,
-                onComplete: (value) {
-                  setState(() {
-                    _actualDuration = value;
-                    _step = _MeditationStep.moodAfter;
-                  });
-                },
-                onCancel: () =>
-                    setState(() => _step = _MeditationStep.duration),
-              ),
-            _MeditationStep.moodAfter => _MoodStep(
-                title: 'How do you feel now?',
-                mood: _moodAfter,
-                onMoodChanged: (value) => setState(() => _moodAfter = value),
-                onNext: () => setState(() => _step = _MeditationStep.notes),
-              ),
-            _MeditationStep.notes => _NotesStep(
-                notes: _notes,
-                onNotesChanged: (value) => setState(() => _notes = value),
-                onSave: _saveSession,
-                onSkip: _saveSession,
-              ),
-            _MeditationStep.complete => _CompleteStep(
-                duration: _actualDuration,
-                moodDelta: _moodAfter - _moodBefore,
-                onNewSession: _resetFlow,
-              ),
-          },
+    final stepContent = switch (_step) {
+      _MeditationStep.duration => _DurationStep(
+          duration: _duration,
+          onDurationChanged: (value) => setState(() => _duration = value),
+          onBegin: () => setState(() => _step = _MeditationStep.moodBefore),
         ),
+      _MeditationStep.moodBefore => _MoodStep(
+          title: 'How are you feeling?',
+          onNext: () => setState(() => _step = _MeditationStep.timer),
+          mood: _moodBefore,
+          onMoodChanged: (value) => setState(() => _moodBefore = value),
+        ),
+      _MeditationStep.timer => MeditationTimer(
+          initialSeconds: _duration,
+          onComplete: (value) {
+            setState(() {
+              _actualDuration = value;
+              _step = _MeditationStep.moodAfter;
+            });
+          },
+          onCancel: () => setState(() => _step = _MeditationStep.duration),
+        ),
+      _MeditationStep.moodAfter => _MoodStep(
+          title: 'How do you feel now?',
+          mood: _moodAfter,
+          onMoodChanged: (value) => setState(() => _moodAfter = value),
+          onNext: () => setState(() => _step = _MeditationStep.notes),
+        ),
+      _MeditationStep.notes => _NotesStep(
+          notes: _notes,
+          onNotesChanged: (value) => setState(() => _notes = value),
+          onSave: _saveSession,
+          onSkip: _saveSession,
+        ),
+      _MeditationStep.complete => _CompleteStep(
+          duration: _actualDuration,
+          moodDelta: _moodAfter - _moodBefore,
+          onNewSession: _resetFlow,
+        ),
+    };
+
+    return SafeArea(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          const maxContentWidth = 560.0;
+          final availableWidth = constraints.maxWidth;
+          final contentWidth =
+              availableWidth > maxContentWidth ? maxContentWidth : availableWidth;
+
+          return SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 120),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: contentWidth,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  child: SizedBox(
+                    key: ValueKey(_step),
+                    width: double.infinity,
+                    child: stepContent,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -128,7 +147,7 @@ class _DurationStep extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           'New Session',
