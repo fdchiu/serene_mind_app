@@ -19,11 +19,13 @@ class MeditationController extends ChangeNotifier {
   UserStats _stats = UserStats.initial();
   DailyQuote _quote = dailyQuotes.first;
   bool _isLoading = true;
+  bool _isSessionActive = false;
 
   bool get isLoading => _isLoading;
   List<MeditationSession> get sessions => List.unmodifiable(_sessions);
   UserStats get stats => _stats;
   DailyQuote get quote => _quote;
+  bool get isSessionActive => _isSessionActive;
 
   Future<void> initialize() async {
     _repository ??= await MeditationRepository.create();
@@ -75,6 +77,18 @@ class MeditationController extends ChangeNotifier {
     _sessions = _sessions.where((session) => session.id != id).toList();
     await _persistSessions();
     _recalculateStats();
+    notifyListeners();
+  }
+
+  void beginActiveSession() {
+    if (_isSessionActive) return;
+    _isSessionActive = true;
+    notifyListeners();
+  }
+
+  void endActiveSession() {
+    if (!_isSessionActive) return;
+    _isSessionActive = false;
     notifyListeners();
   }
 

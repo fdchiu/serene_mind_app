@@ -32,15 +32,39 @@ class _MeditateScreenState extends State<MeditateScreen> {
   int _actualDuration = 0;
   String _notes = '';
 
-  void _resetFlow() {
+  void _transitionToStep(
+    _MeditationStep next, {
+    VoidCallback? updateState,
+  }) {
+    final controller = context.read<MeditationController>();
+    final wasTimer = _step == _MeditationStep.timer;
+    final willBeTimer = next == _MeditationStep.timer;
+
+    if (willBeTimer && !wasTimer) {
+      controller.beginActiveSession();
+    }
+
     setState(() {
-      _step = _MeditationStep.duration;
-      _duration = 300;
-      _moodBefore = 3;
-      _moodAfter = 3;
-      _notes = '';
-      _actualDuration = 0;
+      updateState?.call();
+      _step = next;
     });
+
+    if (wasTimer && !willBeTimer) {
+      controller.endActiveSession();
+    }
+  }
+
+  void _resetFlow() {
+    _transitionToStep(
+      _MeditationStep.duration,
+      updateState: () {
+        _duration = 300;
+        _moodBefore = 3;
+        _moodAfter = 3;
+        _notes = '';
+        _actualDuration = 0;
+      },
+    );
   }
 
   Future<void> _saveSession() async {
@@ -56,7 +80,15 @@ class _MeditateScreenState extends State<MeditateScreen> {
     await controller.saveSession(session);
     if (!mounted) return;
     messenger.showSnackBar(const SnackBar(content: Text('Session saved')));
-    setState(() => _step = _MeditationStep.complete);
+    _transitionToStep(_MeditationStep.complete);
+  }
+
+  @override
+  void dispose() {
+    if (_step == _MeditationStep.timer) {
+      context.read<MeditationController>().endActiveSession();
+    }
+    super.dispose();
   }
 
   @override
@@ -65,29 +97,30 @@ class _MeditateScreenState extends State<MeditateScreen> {
       _MeditationStep.duration => _DurationStep(
           duration: _duration,
           onDurationChanged: (value) => setState(() => _duration = value),
-          onBegin: () => setState(() => _step = _MeditationStep.moodBefore),
+          onBegin: () => _transitionToStep(_MeditationStep.moodBefore),
         ),
       _MeditationStep.moodBefore => _MoodStep(
           title: 'How are you feeling?',
-          onNext: () => setState(() => _step = _MeditationStep.timer),
+          onNext: () => _transitionToStep(_MeditationStep.timer),
           mood: _moodBefore,
           onMoodChanged: (value) => setState(() => _moodBefore = value),
         ),
       _MeditationStep.timer => MeditationTimer(
           initialSeconds: _duration,
+          autoStart: true,
           onComplete: (value) {
-            setState(() {
-              _actualDuration = value;
-              _step = _MeditationStep.moodAfter;
-            });
+            _transitionToStep(
+              _MeditationStep.moodAfter,
+              updateState: () => _actualDuration = value,
+            );
           },
-          onCancel: () => setState(() => _step = _MeditationStep.duration),
+          onCancel: () => _transitionToStep(_MeditationStep.duration),
         ),
       _MeditationStep.moodAfter => _MoodStep(
           title: 'How do you feel now?',
           mood: _moodAfter,
           onMoodChanged: (value) => setState(() => _moodAfter = value),
-          onNext: () => setState(() => _step = _MeditationStep.notes),
+          onNext: () => _transitionToStep(_MeditationStep.notes),
         ),
       _MeditationStep.notes => _NotesStep(
           notes: _notes,

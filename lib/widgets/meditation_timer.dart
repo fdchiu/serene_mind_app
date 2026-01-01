@@ -10,11 +10,13 @@ class MeditationTimer extends StatefulWidget {
     required this.initialSeconds,
     required this.onComplete,
     required this.onCancel,
+    this.autoStart = false,
   });
 
   final int initialSeconds;
   final ValueChanged<int> onComplete;
   final VoidCallback onCancel;
+  final bool autoStart;
 
   @override
   State<MeditationTimer> createState() => _MeditationTimerState();
@@ -25,6 +27,18 @@ class _MeditationTimerState extends State<MeditationTimer> {
   bool _isRunning = false;
   bool _started = false;
   Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _startTimer();
+        }
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -39,6 +53,11 @@ class _MeditationTimerState extends State<MeditationTimer> {
       return;
     }
 
+    _startTimer();
+  }
+
+  void _startTimer() {
+    if (_isRunning) return;
     if (!_started) {
       setState(() => _started = true);
     }

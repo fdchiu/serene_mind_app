@@ -61,7 +61,25 @@ class _HomeShellState extends State<_HomeShell> {
   int _index = 0;
 
   void _setIndex(int index) {
+    if (index == _index) return;
+    final controller = context.read<MeditationController>();
+    final isLockedDestination = controller.isSessionActive && index != 1;
+    if (isLockedDestination) {
+      _showActiveSessionMessage();
+      return;
+    }
     setState(() => _index = index);
+  }
+
+  void _showActiveSessionMessage() {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('Finish your meditation session before leaving.'),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
