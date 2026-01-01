@@ -1,20 +1,20 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Flutter sources live in `lib/`, with feature screens under `lib/screens/`, shared UI in `lib/widgets/`, and state/data helpers in `lib/state/` and `lib/data/`. App bootstrap, themes, and navigation shells are centralized in `lib/main.dart`. Integration tests belong in `test/`, while platform-specific scaffolds reside inside `android/`, `ios/`, `macos/`, `linux/`, `windows/`, and `web/`. Audio, images, and JSON assets are declared in `pubspec.yaml` and loaded via the `assets/` directories referenced there.
+Serene Mind is a Flutter app with runtime code in `lib/`. Feature experiences live under `lib/screens/`, reusable UI stays in `lib/widgets/`, and shared logic is split between `lib/state/`, `lib/services/`, `lib/data/`, and `lib/models/`. App bootstrap, navigation shells, and theme glue stay in `lib/main.dart` and `lib/app_theme.dart`. Tests mirror this layout inside `test/` (for example, `lib/state/meditation_controller.dart` maps to `test/state/meditation_controller_test.dart`). Native hosts reside inside `android/`, `ios/`, `macos/`, `linux/`, `windows/`, and `web/`. Asset folders referenced in `pubspec.yaml` hold audio loops, imagery, and JSON presets—update the manifest whenever adding files.
 
 ## Build, Test, and Development Commands
-- `flutter pub get` — Install updated dependencies after editing `pubspec.yaml`.
-- `flutter run -d <device>` — Launch the full app on a simulator, emulator, or device for manual verification.
-- `flutter analyze` — Run the Dart analyzer with the `flutter_lints` suite to catch style or API issues.
-- `flutter test` — Execute all unit and widget tests inside `test/`.
-- `flutter build <platform>` — Produce release artifacts (e.g., `flutter build apk` or `flutter build web`) before publishing.
+- `flutter pub get` installs or refreshes packages after editing `pubspec.yaml`.
+- `flutter run -d <device>` launches the full experience on a connected simulator or device for manual smoke tests.
+- `flutter analyze` enforces the `flutter_lints` suite and repository-specific rules in `analysis_options.yaml`.
+- `flutter test` runs all unit and widget suites; use `flutter test --coverage` before shipping behavioral changes.
+- `flutter build <platform>` (e.g., `flutter build apk`) produces distributable artifacts for release validation.
 
 ## Coding Style & Naming Conventions
-Follow Dart’s default 2-space indentation and keep imports ordered: SDK, third-party, then local. Run `dart format .` (or let IDE on-save formatting) to ensure consistent layout before committing. Class and widget names use PascalCase, files and directories use snake_case, and constants belong in upper snake case. Prefer `const` constructors and widgets where possible, and extract reusable UI into `lib/widgets/` to avoid duplication. Stick to null safety and leverage the analyzer to resolve warnings proactively.
+Indent with two spaces and favor small, composable widgets. Keep imports ordered as SDK, third-party, then local modules. Run `dart format .` or enable on-save formatting before committing. Widgets, classes, and enums use PascalCase, files and directories use snake_case, and constants remain in SCREAMING_SNAKE_CASE. Prefer `const` constructors, leverage null safety, and centralize repeated UI into `lib/widgets/` to avoid drift.
 
 ## Testing Guidelines
-Add `*_test.dart` files beneath `test/`, mirroring the directory of the code under test (e.g., `lib/state/meditation_controller.dart` → `test/state/meditation_controller_test.dart`). Write widget tests using `WidgetTester` for UI flows and standard `test()`/`group()` for state logic. Target meaningful coverage on meditation streaks, ambient player state, and persistence helpers, and run `flutter test --coverage` before opening a PR when behavior changes are significant.
+Tests rely on the Flutter test runner (`package:flutter_test/flutter_test.dart`). Organize specs with `group()` names that echo the file under test and suffix files with `_test.dart`. Cover meditation streak logic, ambient audio state machines, persistence helpers, and any regression-prone flows surfaced in `test/`. Capture new scenarios alongside bug fixes, and block pull requests on a green `flutter test`.
 
 ## Commit & Pull Request Guidelines
-Use present-tense, imperative commit subjects (`Add relaxation timer presets`) and keep bodies concise. Reference ticket IDs or issue numbers when available (`Refs #42`). Each pull request should summarize the motivation, list functional changes, attach simulator screenshots for UI tweaks, and note any new dependencies or migration steps. Rebase onto the latest `main`, verify `flutter analyze` and `flutter test` locally, and request review from a teammate most familiar with the touched feature area.
+Commit subjects stay in present-tense imperative form (`Add focus session presets`) with optional ticket IDs in the body (`Refs #42`). Rebase onto `main`, run `flutter analyze` and `flutter test`, and include simulator screenshots for visible UI updates. Each PR description should summarize why the change is needed, highlight functional updates, call out migrations or new dependencies, and tag the teammate most familiar with the touched feature area.
