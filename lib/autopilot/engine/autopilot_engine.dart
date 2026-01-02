@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../data/autopilot_store.dart';
 import '../domain/autopilot_state.dart';
 import 'autopilot_triggers.dart';
@@ -33,19 +36,19 @@ class AutopilotEngine extends Notifier<AutopilotState> {
 
   Future<void> _init() async {
     await _store.init();
-    state = _store.load();
+    state = await _store.load();
   }
 
   /// Keep this method for simple state refreshes if you ever need it,
   /// but it MUST NOT trigger UI.
-  void onAppForegrounded() {
-    _update(arousalDelta: 0.02);
+  Future<void> onAppForegrounded() async {
+    await _update(arousalDelta: 0.02);
   }
 
   /// Call this ONLY when the app is reopened (background -> foreground).
   /// This is the ONLY place we emit triggers.
-  void onAppReopen() {
-    _update(arousalDelta: 0.02);
+  Future<void> onAppReopen() async {
+    await _update(arousalDelta: 0.02);
 
     final meetsThreshold = state.arousal > 0.72 && state.confidence > 0.4;
     print('[AUTOPILOT] arousal=${state.arousal} conf=${state.confidence}');
@@ -57,23 +60,23 @@ class AutopilotEngine extends Notifier<AutopilotState> {
     );
   }
 
-  void onSessionSaved({
+  Future<void> onSessionSaved({
     required int durationSeconds,
     required int moodBefore,
     required int moodAfter,
-  }) {
+  }) async {
     final delta = (moodAfter - moodBefore) / 5.0;
-    _update(
+    await _update(
       valenceDelta: delta,
       arousalDelta: -0.08,
       confidenceDelta: 0.15,
     );
   }
 
-  void submitCheckIn({
+  Future<void> submitCheckIn({
     required double valence,
     required double arousal,
-  }) {
+  }) async {
     final next = AutopilotState(
       valence: valence.clamp(-1.0, 1.0),
       arousal: arousal.clamp(0.0, 1.0),
@@ -83,7 +86,7 @@ class AutopilotEngine extends Notifier<AutopilotState> {
     );
 
     state = next;
-    _store.save(next);
+    await _store.save(next);
   }
 
   void _maybeTriggerQuickReset(String reason) {
@@ -102,11 +105,11 @@ class AutopilotEngine extends Notifier<AutopilotState> {
     );
   }
 
-  void _update({
+  Future<void> _update({
     double valenceDelta = 0,
     double arousalDelta = 0,
     double confidenceDelta = 0,
-  }) {
+  }) async {
     final next = AutopilotState(
       valence: (state.valence + valenceDelta).clamp(-1, 1),
       arousal: (state.arousal + arousalDelta).clamp(0, 1),
@@ -115,6 +118,6 @@ class AutopilotEngine extends Notifier<AutopilotState> {
       lastUpdatedMs: DateTime.now().millisecondsSinceEpoch,
     );
     state = next;
-    _store.save(next);
+    await _store.save(next);
   }
 }

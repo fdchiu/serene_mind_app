@@ -383,13 +383,14 @@ class _AutopilotCheckInSheetState extends State<_AutopilotCheckInSheet> {
               const SizedBox(width: 12),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     final container =
-                    riverpod.ProviderScope.containerOf(context);
-                    container
+                        riverpod.ProviderScope.containerOf(context);
+                    await container
                         .read(autopilotEngineProvider.notifier)
                         .submitCheckIn(valence: _valence, arousal: _arousal);
 
+                    if (!mounted) return;
                     Navigator.of(context).maybePop();
 
                     ScaffoldMessenger.of(context).showSnackBar(

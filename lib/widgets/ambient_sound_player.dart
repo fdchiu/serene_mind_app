@@ -9,8 +9,10 @@ import '../app_theme.dart';
 import '../data/ambient_controller.dart';
 import '../data/ambient_sounds.dart';
 import '../data/sound_preset.dart';
+import '../data/adaptive_soundscape_controller.dart';
+import '../soundscape_engine/engine_types.dart';
 
-enum AmbientAudioSource { recordings, synth }
+enum AmbientAudioSource { recordings, synth, adaptive }
 
 class AmbientSoundPlayer extends StatefulWidget {
   const AmbientSoundPlayer({super.key, this.compact = false});
@@ -24,19 +26,24 @@ class AmbientSoundPlayer extends StatefulWidget {
 class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
   final AudioPlayer _player = AudioPlayer();
   final AmbientController _synthController = AmbientController();
+  final AdaptiveSoundscapeController _adaptiveController =
+  AdaptiveSoundscapeController();
 
   AmbientAudioSource _source = AmbientAudioSource.recordings;
 
   AmbientSoundCategory? _activeCategory;
   AmbientTrack? _activeTrack;
+
   SoundPresetCollection? _activePresetCollection;
   SoundPreset? _activePreset;
 
   double _volume = 0.5;
   bool _muted = false;
+
   String? _loadingTrackId;
   bool _synthLoading = false;
   String? _error;
+
   Directory? _cacheDir;
 
   @override
@@ -49,23 +56,33 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
   void dispose() {
     _player.dispose();
     _synthController.stop();
+    _adaptiveController.stop();
     super.dispose();
   }
 
   Future<void> _switchSource(AmbientAudioSource source) async {
     if (_source == source) return;
-    setState(() => _source = source);
-    if (source == AmbientAudioSource.recordings) {
-      await _synthController.stop();
-      _activePresetCollection = null;
-      _activePreset = null;
-      _synthLoading = false;
-    } else {
-      await _player.stop();
+
+    setState(() {
+      _source = source;
+      _error = null;
+
+      // Clear selection state; each source manages its own selection
       _activeCategory = null;
       _activeTrack = null;
+      _activePresetCollection = null;
+      _activePreset = null;
+
       _loadingTrackId = null;
-    }
+      _synthLoading = false;
+    });
+
+    // Always stop all pipelines when switching source.
+    await _player.stop();
+    await _synthController.stop();
+    await _adaptiveController.stop();
+
+    if (!mounted) return;
     setState(() {});
   }
 
@@ -87,9 +104,7 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
     await _startPlayback(category, track);
   }
 
-  Future<void> _handlePresetCollectionTap(
-    SoundPresetCollection collection,
-  ) async {
+  Future<void> _handlePresetCollectionTap(SoundPresetCollection collection) async {
     if (_activePresetCollection?.category == collection.category) {
       await _synthController.stop();
       setState(() {
@@ -106,6 +121,38 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
         : await _showPresetPicker(collection);
     if (preset == null) return;
     await _startSynthPlayback(collection, preset);
+  }
+
+  Future<void> _startAdaptive(SoundscapeMode mode) async {
+    setState(() {
+      _error = null;
+
+      // Clear other selection state
+      _activeCategory = null;
+      _activeTrack = null;
+      _activePresetCollection = null;
+      _activePreset = null;
+
+      _loadingTrackId = null;
+      _synthLoading = false;
+    });
+
+    try {
+      await _player.stop();
+      await _synthController.stop();
+
+      await _adaptiveController.start(mode);
+      _adaptiveController.setMuted(_muted);
+      _adaptiveController.setVolume(_volume);
+
+      if (!mounted) return;
+      setState(() {});
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Unable to start adaptive soundscape: $e';
+      });
+    }
   }
 
   Future<Directory> _cacheDirectory() async {
@@ -140,20 +187,23 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
     return null;
   }
 
-  Future<void> _startPlayback(
-    AmbientSoundCategory category,
-    AmbientTrack track,
-  ) async {
+  Future<void> _startPlayback(AmbientSoundCategory category, AmbientTrack track) async {
     setState(() {
       _loadingTrackId = track.id;
       _error = null;
+
       _activeCategory = category;
       _activeTrack = null;
+
+      // Clear synth + adaptive selection
       _activePresetCollection = null;
       _activePreset = null;
       _synthLoading = false;
     });
+
     await _synthController.stop();
+    await _adaptiveController.stop();
+
     final file = await _downloadTrack(track);
     if (!mounted) return;
 
@@ -169,6 +219,7 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
     await _player.setSource(DeviceFileSource(file.path));
     await _player.setVolume(_muted ? 0 : _volume);
     await _player.resume();
+
     setState(() {
       _activeCategory = category;
       _activeTrack = track;
@@ -176,15 +227,15 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
     });
   }
 
-  Future<void> _startSynthPlayback(
-    SoundPresetCollection collection,
-    SoundPreset preset,
-  ) async {
+  Future<void> _startSynthPlayback(SoundPresetCollection collection, SoundPreset preset) async {
     setState(() {
       _synthLoading = true;
       _error = null;
+
       _activePresetCollection = collection;
       _activePreset = null;
+
+      // Clear recordings + adaptive selection
       _activeCategory = null;
       _activeTrack = null;
       _loadingTrackId = null;
@@ -192,9 +243,12 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
 
     try {
       await _player.stop();
+      await _adaptiveController.stop();
+
       await _synthController.play(preset);
       _synthController.setVolume(_muted ? 0 : _volume);
       _synthController.setMuted(_muted);
+
       if (!mounted) return;
       setState(() {
         _activePreset = preset;
@@ -240,9 +294,8 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
                 ),
               ),
               ...category.tracks.map(
-                (track) => ListTile(
-                  leading:
-                      Text(category.icon, style: const TextStyle(fontSize: 20)),
+                    (track) => ListTile(
+                  leading: Text(category.icon, style: const TextStyle(fontSize: 20)),
                   title: Text(track.title),
                   subtitle: Text(
                     track.durationLabel != null
@@ -251,8 +304,7 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
                     style: const TextStyle(color: Colors.white70),
                   ),
                   trailing: _activeTrack?.id == track.id
-                      ? Icon(Icons.check,
-                          color: Theme.of(context).colorScheme.primary)
+                      ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary)
                       : null,
                   onTap: () => Navigator.of(context).pop(track),
                 ),
@@ -265,9 +317,7 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
     );
   }
 
-  Future<SoundPreset?> _showPresetPicker(
-    SoundPresetCollection collection,
-  ) {
+  Future<SoundPreset?> _showPresetPicker(SoundPresetCollection collection) {
     return showModalBottomSheet<SoundPreset>(
       context: context,
       builder: (context) {
@@ -296,17 +346,15 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
                 ),
               ),
               ...collection.presets.map(
-                (preset) => ListTile(
-                  leading: Text(collection.icon,
-                      style: const TextStyle(fontSize: 20)),
+                    (preset) => ListTile(
+                  leading: Text(collection.icon, style: const TextStyle(fontSize: 20)),
                   title: Text(preset.name),
                   subtitle: Text(
                     preset.category.name,
                     style: const TextStyle(color: Colors.white70),
                   ),
                   trailing: _activePreset?.id == preset.id
-                      ? Icon(Icons.check,
-                          color: Theme.of(context).colorScheme.primary)
+                      ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary)
                       : null,
                   onTap: () => Navigator.of(context).pop(preset),
                 ),
@@ -324,6 +372,7 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
     if (!_muted) {
       await _player.setVolume(value);
       _synthController.setVolume(value);
+      _adaptiveController.setVolume(value);
     }
   }
 
@@ -331,27 +380,39 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
     setState(() => _muted = !_muted);
     await _player.setVolume(_muted ? 0 : _volume);
     _synthController.setMuted(_muted);
+    _adaptiveController.setMuted(_muted);
   }
 
   @override
   Widget build(BuildContext context) {
     final baseDecoration = glassDecoration(context);
-    final isRecordings = _source == AmbientAudioSource.recordings;
-    final items = isRecordings
-        ? _buildRecordingTiles(baseDecoration)
-        : _buildSynthTiles(baseDecoration);
 
-    final isLoading =
-        isRecordings ? _loadingTrackId != null : _synthLoading == true;
-    final hasActive =
-        isRecordings ? _activeTrack != null : _activePresetCollection != null;
-    final activeText = isRecordings
+    final isRecordings = _source == AmbientAudioSource.recordings;
+    final isSynth = _source == AmbientAudioSource.synth;
+    final isAdaptive = _source == AmbientAudioSource.adaptive;
+
+    final items = switch (_source) {
+      AmbientAudioSource.recordings => _buildRecordingTiles(baseDecoration),
+      AmbientAudioSource.synth => _buildSynthTiles(baseDecoration),
+      AmbientAudioSource.adaptive => _buildAdaptiveTiles(baseDecoration),
+    };
+
+    final isLoading = isRecordings ? _loadingTrackId != null : (isSynth ? _synthLoading : false);
+
+    final hasActive = isRecordings
         ? _activeTrack != null
-            ? '${_activeTrack!.title}${_activeTrack?.durationLabel != null ? ' • ${_activeTrack!.durationLabel}' : ''}'
-            : null
-        : _activePreset != null
-            ? '${_activePreset!.name} • ${_activePresetCollection?.label}'
-            : null;
+        : isSynth
+        ? _activePresetCollection != null
+        : _adaptiveController.isPlaying;
+
+    final activeText = isRecordings
+        ? (_activeTrack != null
+        ? '${_activeTrack!.title}${_activeTrack?.durationLabel != null ? ' • ${_activeTrack!.durationLabel}' : ''}'
+        : null)
+        : isSynth
+        ? (_activePreset != null ? '${_activePreset!.name} • ${_activePresetCollection?.label}' : null)
+        : (_adaptiveController.isPlaying ? 'Adaptive • ${_adaptiveController.mode.name}' : null);
+
     final sliderEnabled = hasActive && !isLoading;
 
     return Column(
@@ -368,6 +429,11 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
               value: AmbientAudioSource.synth,
               icon: Icon(Icons.memory),
               label: Text('Synth'),
+            ),
+            ButtonSegment(
+              value: AmbientAudioSource.adaptive,
+              icon: Icon(Icons.auto_awesome),
+              label: Text('Adaptive'),
             ),
           ],
           selected: {_source},
@@ -390,9 +456,7 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
             child: Row(
               children: [
                 IconButton(
-                  onPressed: () {
-                    _toggleMute();
-                  },
+                  onPressed: _toggleMute,
                   icon: Icon(_muted ? Icons.volume_off : Icons.volume_up),
                 ),
                 Expanded(
@@ -401,9 +465,7 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
                     min: 0,
                     max: 1,
                     divisions: 20,
-                    onChanged: (value) {
-                      _updateVolume(value);
-                    },
+                    onChanged: _updateVolume,
                   ),
                 ),
               ],
@@ -414,10 +476,7 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
             padding: const EdgeInsets.only(top: 8),
             child: Text(
               activeText,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.white70),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.white70),
             ),
           ),
         if (_error != null)
@@ -425,68 +484,99 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
             padding: const EdgeInsets.only(top: 8),
             child: Text(
               _error!,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: Colors.redAccent),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.redAccent),
             ),
           ),
       ],
     );
   }
 
+  List<Widget> _buildAdaptiveTiles(BoxDecoration baseDecoration) {
+    final modes = <({String label, String icon, SoundscapeMode mode})>[
+      (label: 'Focus', icon: '🎯', mode: SoundscapeMode.focus),
+      (label: 'Downshift', icon: '🌿', mode: SoundscapeMode.downshift),
+      (label: 'Sleep', icon: '🌙', mode: SoundscapeMode.sleep),
+    ];
+
+    return modes.map((m) {
+      final active = _adaptiveController.isPlaying && _adaptiveController.mode == m.mode;
+
+      return GestureDetector(
+        onTap: () => _startAdaptive(m.mode),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: baseDecoration.copyWith(
+            color: active
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
+                : baseDecoration.color,
+            border: Border.all(
+              color: active
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.white.withValues(alpha: 0.08),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(m.icon, style: const TextStyle(fontSize: 24)),
+              if (!widget.compact) ...[
+                const SizedBox(height: 8),
+                Text(
+                  m.label,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Colors.white70),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
+    }).toList();
+  }
+
   List<Widget> _buildRecordingTiles(BoxDecoration baseDecoration) {
     return ambientSoundCategories
         .map(
           (category) => GestureDetector(
-            onTap: () => _handleCategoryTap(category),
-            onLongPress: category.tracks.length > 1
-                ? () => _showTrackPicker(category)
-                : null,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: baseDecoration.copyWith(
-                color: _activeCategory?.id == category.id
-                    ? Theme.of(context)
-                        .colorScheme
-                        .primary
-                        .withValues(alpha: 0.2)
-                    : baseDecoration.color,
-                border: Border.all(
-                  color: _activeCategory?.id == category.id
-                      ? Theme.of(context).colorScheme.primary
-                      : Colors.white.withValues(alpha: 0.08),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(category.icon, style: const TextStyle(fontSize: 24)),
-                  if (!widget.compact) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      category.label,
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelMedium
-                          ?.copyWith(color: Colors.white70),
-                    ),
-                  ],
-                  if (_loadingTrackId != null &&
-                      _activeCategory?.id == category.id)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                ],
-              ),
+        onTap: () => _handleCategoryTap(category),
+        onLongPress: category.tracks.length > 1 ? () => _showTrackPicker(category) : null,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: baseDecoration.copyWith(
+            color: _activeCategory?.id == category.id
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
+                : baseDecoration.color,
+            border: Border.all(
+              color: _activeCategory?.id == category.id
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.white.withValues(alpha: 0.08),
             ),
           ),
-        )
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(category.icon, style: const TextStyle(fontSize: 24)),
+              if (!widget.compact) ...[
+                const SizedBox(height: 8),
+                Text(
+                  category.label,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Colors.white70),
+                ),
+              ],
+              if (_loadingTrackId != null && _activeCategory?.id == category.id)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    )
         .toList();
   }
 
@@ -494,56 +584,46 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
     return soundPresetCollections
         .map(
           (collection) => GestureDetector(
-            onTap: () => _handlePresetCollectionTap(collection),
-            onLongPress: collection.presets.length > 1
-                ? () => _showPresetPicker(collection)
-                : null,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: baseDecoration.copyWith(
-                color: _activePresetCollection?.category == collection.category
-                    ? Theme.of(context)
-                        .colorScheme
-                        .primary
-                        .withValues(alpha: 0.2)
-                    : baseDecoration.color,
-                border: Border.all(
-                  color:
-                      _activePresetCollection?.category == collection.category
-                          ? Theme.of(context).colorScheme.primary
-                          : Colors.white.withValues(alpha: 0.08),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(collection.icon, style: const TextStyle(fontSize: 24)),
-                  if (!widget.compact) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      collection.label,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelMedium
-                          ?.copyWith(color: Colors.white70),
-                    ),
-                  ],
-                  if (_synthLoading &&
-                      _activePresetCollection?.category == collection.category)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8),
-                      child: SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                ],
-              ),
+        onTap: () => _handlePresetCollectionTap(collection),
+        onLongPress: collection.presets.length > 1 ? () => _showPresetPicker(collection) : null,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: baseDecoration.copyWith(
+            color: _activePresetCollection?.category == collection.category
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)
+                : baseDecoration.color,
+            border: Border.all(
+              color: _activePresetCollection?.category == collection.category
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.white.withValues(alpha: 0.08),
             ),
           ),
-        )
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(collection.icon, style: const TextStyle(fontSize: 24)),
+              if (!widget.compact) ...[
+                const SizedBox(height: 8),
+                Text(
+                  collection.label,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Colors.white70),
+                ),
+              ],
+              if (_synthLoading && _activePresetCollection?.category == collection.category)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    )
         .toList();
   }
 }

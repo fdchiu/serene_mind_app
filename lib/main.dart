@@ -149,7 +149,9 @@ class _HomeShellState extends State<_HomeShell> with WidgetsBindingObserver {
 
       // IMPORTANT: rename your engine method to onAppReopen()
       // so the trigger policy only lives here.
-      container.read(autopilotEngineProvider.notifier).onAppReopen();
+      unawaited(
+        container.read(autopilotEngineProvider.notifier).onAppReopen(),
+      );
     }
   }
 
@@ -232,4 +234,3 @@ class _HomeShellState extends State<_HomeShell> with WidgetsBindingObserver {
     );
   }
 }
-

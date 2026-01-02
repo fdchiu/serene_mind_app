@@ -82,7 +82,7 @@ class _MeditateScreenState extends State<MeditateScreen> {
     );
     await controller.saveSession(session);
     final container = ProviderScope.containerOf(context);
-    container.read(autopilotEngineProvider.notifier).onSessionSaved(
+    await container.read(autopilotEngineProvider.notifier).onSessionSaved(
       durationSeconds: _actualDuration,
       moodBefore: _moodBefore,
       moodAfter: _moodAfter,
