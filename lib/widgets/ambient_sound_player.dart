@@ -392,8 +392,8 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
     final isAdaptive = _source == AmbientAudioSource.adaptive;
 
     final items = switch (_source) {
-      AmbientAudioSource.recordings => _buildRecordingTiles(baseDecoration),
       AmbientAudioSource.synth => _buildSynthTiles(baseDecoration),
+      AmbientAudioSource.recordings => _buildRecordingTiles(baseDecoration),
       AmbientAudioSource.adaptive => _buildAdaptiveTiles(baseDecoration),
     };
 
@@ -421,11 +421,6 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
         SegmentedButton<AmbientAudioSource>(
           segments: const [
             ButtonSegment(
-              value: AmbientAudioSource.recordings,
-              icon: Icon(Icons.library_music_outlined),
-              label: Text('Soundtracks'),
-            ),
-            ButtonSegment(
               value: AmbientAudioSource.synth,
               icon: Icon(Icons.memory),
               label: Text('Synth'),
@@ -434,6 +429,11 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
               value: AmbientAudioSource.adaptive,
               icon: Icon(Icons.auto_awesome),
               label: Text('Adaptive'),
+            ),
+            ButtonSegment(
+              value: AmbientAudioSource.recordings,
+              icon: Icon(Icons.library_music_outlined),
+              label: Text('Soundtracks'),
             ),
           ],
           selected: {_source},
@@ -502,7 +502,15 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
       final active = _adaptiveController.isPlaying && _adaptiveController.mode == m.mode;
 
       return GestureDetector(
-        onTap: () => _startAdaptive(m.mode),
+        onTap: () async {
+          if (active) {
+            await _adaptiveController.stop();
+            if (!mounted) return;
+            setState(() {});
+          } else {
+            await _startAdaptive(m.mode);
+          }
+        },
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: baseDecoration.copyWith(
