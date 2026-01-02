@@ -14,10 +14,36 @@ import '../soundscape_engine/engine_types.dart';
 
 enum AmbientAudioSource { recordings, synth, adaptive }
 
+class AmbientSoundPlayerController {
+  _AmbientSoundPlayerState? _state;
+
+  Future<void> stop() async {
+    final state = _state;
+    if (state != null) {
+      await state._stopAll();
+    }
+  }
+
+  void _attach(_AmbientSoundPlayerState state) {
+    _state = state;
+  }
+
+  void _detach(_AmbientSoundPlayerState state) {
+    if (_state == state) {
+      _state = null;
+    }
+  }
+}
+
 class AmbientSoundPlayer extends StatefulWidget {
-  const AmbientSoundPlayer({super.key, this.compact = false});
+  const AmbientSoundPlayer({
+    super.key,
+    this.compact = false,
+    this.controller,
+  });
 
   final bool compact;
+  final AmbientSoundPlayerController? controller;
 
   @override
   State<AmbientSoundPlayer> createState() => _AmbientSoundPlayerState();
@@ -49,15 +75,42 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
   @override
   void initState() {
     super.initState();
+    widget.controller?._attach(this);
     _player.setReleaseMode(ReleaseMode.loop);
   }
 
   @override
+  void didUpdateWidget(covariant AmbientSoundPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?._detach(this);
+      widget.controller?._attach(this);
+    }
+  }
+
+  @override
   void dispose() {
+    widget.controller?._detach(this);
     _player.dispose();
     _synthController.stop();
     _adaptiveController.stop();
     super.dispose();
+  }
+
+  Future<void> _stopAll() async {
+    await _player.stop();
+    await _synthController.stop();
+    await _adaptiveController.stop();
+    if (!mounted) return;
+    setState(() {
+      _activeCategory = null;
+      _activeTrack = null;
+      _activePresetCollection = null;
+      _activePreset = null;
+      _loadingTrackId = null;
+      _synthLoading = false;
+      _error = null;
+    });
   }
 
   Future<void> _switchSource(AmbientAudioSource source) async {

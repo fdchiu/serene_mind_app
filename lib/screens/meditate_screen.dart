@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
@@ -9,7 +11,6 @@ import '../widgets/ambient_sound_player.dart';
 import '../widgets/duration_selector.dart';
 import '../widgets/meditation_timer.dart';
 import '../widgets/mood_selector.dart';
-import '';
 
 enum _MeditationStep {
   duration,
@@ -28,12 +29,19 @@ class MeditateScreen extends StatefulWidget {
 }
 
 class _MeditateScreenState extends State<MeditateScreen> {
+  final AmbientSoundPlayerController _ambientController =
+      AmbientSoundPlayerController();
   _MeditationStep _step = _MeditationStep.duration;
   int _duration = 300;
   int _moodBefore = 3;
   int _moodAfter = 3;
   int _actualDuration = 0;
   String _notes = '';
+  Future<void> _stopAmbientAudio() => _ambientController.stop();
+  void _handleCancelSession() {
+    unawaited(_stopAmbientAudio());
+    _transitionToStep(_MeditationStep.duration);
+  }
 
   void _transitionToStep(
     _MeditationStep next, {
@@ -81,6 +89,7 @@ class _MeditateScreenState extends State<MeditateScreen> {
       type: SessionType.timer,
     );
     await controller.saveSession(session);
+    await _stopAmbientAudio();
     final container = ProviderScope.containerOf(context);
     await container.read(autopilotEngineProvider.notifier).onSessionSaved(
       durationSeconds: _actualDuration,
@@ -95,6 +104,7 @@ class _MeditateScreenState extends State<MeditateScreen> {
 
   @override
   void dispose() {
+    unawaited(_stopAmbientAudio());
     if (_step == _MeditationStep.timer) {
       context.read<MeditationController>().endActiveSession();
     }
@@ -110,6 +120,7 @@ class _MeditateScreenState extends State<MeditateScreen> {
           duration: _duration,
           onDurationChanged: (value) => setState(() => _duration = value),
           onBegin: () => _transitionToStep(_MeditationStep.moodBefore),
+          ambientController: _ambientController,
         ),
       ),
       KeyedSubtree(
@@ -131,7 +142,7 @@ class _MeditateScreenState extends State<MeditateScreen> {
             updateState: () => _actualDuration = value,
           );
         },
-        onCancel: () => _transitionToStep(_MeditationStep.duration),
+        onCancel: _handleCancelSession,
       ),
       KeyedSubtree(
         key: const ValueKey('mood-after'),
@@ -200,11 +211,13 @@ class _DurationStep extends StatelessWidget {
     required this.duration,
     required this.onDurationChanged,
     required this.onBegin,
+    required this.ambientController,
   });
 
   final int duration;
   final ValueChanged<int> onDurationChanged;
   final VoidCallback onBegin;
+  final AmbientSoundPlayerController ambientController;
 
   @override
   Widget build(BuildContext context) {
@@ -226,7 +239,10 @@ class _DurationStep extends StatelessWidget {
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 12),
-        const AmbientSoundPlayer(compact: true),
+        AmbientSoundPlayer(
+          controller: ambientController,
+          compact: true,
+        ),
         const SizedBox(height: 24),
         ElevatedButton(
           onPressed: onBegin,

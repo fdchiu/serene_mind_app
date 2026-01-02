@@ -13,12 +13,6 @@ import 'adaptation/param_smoother.dart';
 import 'graph/audio_graph.dart';
 import 'presets/preset_factory.dart';
 
-/// Session phase for shaping params over time.
-/// - intro: gentler density/brightness/variation, slightly lower level
-/// - steady: baseline
-/// - windDown: lower density/brightness/variation, slightly lower level
-enum SoundscapePhase { intro, steady, windDown }
-
 /// Main entry point.
 ///
 /// Integration expectation:
@@ -154,6 +148,7 @@ class SoundscapeEngine {
       target: _applyPhaseShape(_target),
       dtSeconds: frames / config.sampleRate,
       mode: _mode,
+      phase: _phase
     );
 
     if (!_xfadeActive) {
