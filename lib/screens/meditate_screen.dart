@@ -104,18 +104,22 @@ class _MeditateScreenState extends State<MeditateScreen> {
   @override
   Widget build(BuildContext context) {
     final steps = [
-      _DurationStep(
+      KeyedSubtree(
         key: const ValueKey('duration'),
-        duration: _duration,
-        onDurationChanged: (value) => setState(() => _duration = value),
-        onBegin: () => _transitionToStep(_MeditationStep.moodBefore),
+        child: _DurationStep(
+          duration: _duration,
+          onDurationChanged: (value) => setState(() => _duration = value),
+          onBegin: () => _transitionToStep(_MeditationStep.moodBefore),
+        ),
       ),
-      _MoodStep(
+      KeyedSubtree(
         key: const ValueKey('mood-before'),
-        title: 'How are you feeling?',
-        onNext: () => _transitionToStep(_MeditationStep.timer),
-        mood: _moodBefore,
-        onMoodChanged: (value) => setState(() => _moodBefore = value),
+        child: _MoodStep(
+          title: 'How are you feeling?',
+          onNext: () => _transitionToStep(_MeditationStep.timer),
+          mood: _moodBefore,
+          onMoodChanged: (value) => setState(() => _moodBefore = value),
+        ),
       ),
       MeditationTimer(
         key: const ValueKey('timer'),
@@ -129,25 +133,31 @@ class _MeditateScreenState extends State<MeditateScreen> {
         },
         onCancel: () => _transitionToStep(_MeditationStep.duration),
       ),
-      _MoodStep(
+      KeyedSubtree(
         key: const ValueKey('mood-after'),
-        title: 'How do you feel now?',
-        mood: _moodAfter,
-        onMoodChanged: (value) => setState(() => _moodAfter = value),
-        onNext: () => _transitionToStep(_MeditationStep.notes),
+        child: _MoodStep(
+          title: 'How do you feel now?',
+          mood: _moodAfter,
+          onMoodChanged: (value) => setState(() => _moodAfter = value),
+          onNext: () => _transitionToStep(_MeditationStep.notes),
+        ),
       ),
-      _NotesStep(
+      KeyedSubtree(
         key: const ValueKey('notes'),
-        notes: _notes,
-        onNotesChanged: (value) => setState(() => _notes = value),
-        onSave: _saveSession,
-        onSkip: _saveSession,
+        child: _NotesStep(
+          notes: _notes,
+          onNotesChanged: (value) => setState(() => _notes = value),
+          onSave: _saveSession,
+          onSkip: _saveSession,
+        ),
       ),
-      _CompleteStep(
+      KeyedSubtree(
         key: const ValueKey('complete'),
-        duration: _actualDuration,
-        moodDelta: _moodAfter - _moodBefore,
-        onNewSession: _resetFlow,
+        child: _CompleteStep(
+          duration: _actualDuration,
+          moodDelta: _moodAfter - _moodBefore,
+          onNewSession: _resetFlow,
+        ),
       ),
     ];
 

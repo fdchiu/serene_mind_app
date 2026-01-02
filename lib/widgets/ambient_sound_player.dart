@@ -29,7 +29,7 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
   final AdaptiveSoundscapeController _adaptiveController =
   AdaptiveSoundscapeController();
 
-  AmbientAudioSource _source = AmbientAudioSource.recordings;
+  AmbientAudioSource _source = AmbientAudioSource.synth;
 
   AmbientSoundCategory? _activeCategory;
   AmbientTrack? _activeTrack;
