@@ -103,47 +103,53 @@ class _MeditateScreenState extends State<MeditateScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final stepContent = switch (_step) {
-      _MeditationStep.duration => _DurationStep(
-          duration: _duration,
-          onDurationChanged: (value) => setState(() => _duration = value),
-          onBegin: () => _transitionToStep(_MeditationStep.moodBefore),
-        ),
-      _MeditationStep.moodBefore => _MoodStep(
-          title: 'How are you feeling?',
-          onNext: () => _transitionToStep(_MeditationStep.timer),
-          mood: _moodBefore,
-          onMoodChanged: (value) => setState(() => _moodBefore = value),
-        ),
-      _MeditationStep.timer => MeditationTimer(
-          initialSeconds: _duration,
-          autoStart: true,
-          onComplete: (value) {
-            _transitionToStep(
-              _MeditationStep.moodAfter,
-              updateState: () => _actualDuration = value,
-            );
-          },
-          onCancel: () => _transitionToStep(_MeditationStep.duration),
-        ),
-      _MeditationStep.moodAfter => _MoodStep(
-          title: 'How do you feel now?',
-          mood: _moodAfter,
-          onMoodChanged: (value) => setState(() => _moodAfter = value),
-          onNext: () => _transitionToStep(_MeditationStep.notes),
-        ),
-      _MeditationStep.notes => _NotesStep(
-          notes: _notes,
-          onNotesChanged: (value) => setState(() => _notes = value),
-          onSave: _saveSession,
-          onSkip: _saveSession,
-        ),
-      _MeditationStep.complete => _CompleteStep(
-          duration: _actualDuration,
-          moodDelta: _moodAfter - _moodBefore,
-          onNewSession: _resetFlow,
-        ),
-    };
+    final steps = [
+      _DurationStep(
+        key: const ValueKey('duration'),
+        duration: _duration,
+        onDurationChanged: (value) => setState(() => _duration = value),
+        onBegin: () => _transitionToStep(_MeditationStep.moodBefore),
+      ),
+      _MoodStep(
+        key: const ValueKey('mood-before'),
+        title: 'How are you feeling?',
+        onNext: () => _transitionToStep(_MeditationStep.timer),
+        mood: _moodBefore,
+        onMoodChanged: (value) => setState(() => _moodBefore = value),
+      ),
+      MeditationTimer(
+        key: const ValueKey('timer'),
+        initialSeconds: _duration,
+        autoStart: true,
+        onComplete: (value) {
+          _transitionToStep(
+            _MeditationStep.moodAfter,
+            updateState: () => _actualDuration = value,
+          );
+        },
+        onCancel: () => _transitionToStep(_MeditationStep.duration),
+      ),
+      _MoodStep(
+        key: const ValueKey('mood-after'),
+        title: 'How do you feel now?',
+        mood: _moodAfter,
+        onMoodChanged: (value) => setState(() => _moodAfter = value),
+        onNext: () => _transitionToStep(_MeditationStep.notes),
+      ),
+      _NotesStep(
+        key: const ValueKey('notes'),
+        notes: _notes,
+        onNotesChanged: (value) => setState(() => _notes = value),
+        onSave: _saveSession,
+        onSkip: _saveSession,
+      ),
+      _CompleteStep(
+        key: const ValueKey('complete'),
+        duration: _actualDuration,
+        moodDelta: _moodAfter - _moodBefore,
+        onNewSession: _resetFlow,
+      ),
+    ];
 
     return SafeArea(
       child: LayoutBuilder(
@@ -159,13 +165,16 @@ class _MeditateScreenState extends State<MeditateScreen> {
               alignment: Alignment.topCenter,
               child: SizedBox(
                 width: contentWidth,
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 400),
-                  child: SizedBox(
-                    key: ValueKey(_step),
-                    width: double.infinity,
-                    child: stepContent,
-                  ),
+                child: IndexedStack(
+                  index: _step.index,
+                  children: steps
+                      .map(
+                        (child) => SizedBox(
+                          width: double.infinity,
+                          child: child,
+                        ),
+                      )
+                      .toList(),
                 ),
               ),
             ),

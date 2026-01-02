@@ -256,4 +256,16 @@ class SoundscapeEngine {
         return p.clamp01();
     }
   }
+
+  void setPhaseByProgress(double progress01) {
+    final p = progress01.clamp(0.0, 1.0);
+    if (p < 0.15) {
+      setPhase(SoundscapePhase.intro, progress01: p / 0.15);
+    } else if (p > 0.85) {
+      setPhase(SoundscapePhase.windDown, progress01: (p - 0.85) / 0.15);
+    } else {
+      setPhase(SoundscapePhase.steady, progress01: (p - 0.15) / 0.70);
+    }
+  }
+
 }
