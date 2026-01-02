@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../data/ambient_controller.dart';
+import '../data/sound_preset.dart';
 
 /// -------------------------------
 /// Model
@@ -267,12 +271,14 @@ class SoundDesignerPage extends StatefulWidget {
 
 class _SoundDesignerPageState extends State<SoundDesignerPage> {
   final _store = PresetStore();
+  final AmbientController _previewController = AmbientController();
 
   late SyntheticSoundParams _p;
 
   // Saved presets (id -> preset)
   Map<String, SyntheticSoundParams> _saved = {};
   String? _selectedPresetId;
+  bool _previewing = false;
 
   // UI categories you mentioned
   static const _categories = <String>[
@@ -424,6 +430,12 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
     }
   }
 
+  @override
+  void dispose() {
+    unawaited(_previewController.stop());
+    super.dispose();
+  }
+
   void _snack(String msg) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -549,6 +561,12 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
           _sectionHeader('LFO'),
           _lfoCard(),
           const SizedBox(height: 32),
+          FilledButton.icon(
+            onPressed: _togglePreview,
+            icon: Icon(_previewing ? Icons.stop : Icons.play_arrow),
+            label: Text(_previewing ? 'Stop Preview' : 'Play Preview'),
+          ),
+          const SizedBox(height: 8),
 
           FilledButton.icon(
             onPressed: _saveCurrent,
@@ -845,8 +863,113 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
     );
   }
 
+  Future<void> _togglePreview() async {
+    if (_previewing) {
+      await _stopPreview();
+    } else {
+      await _startPreview();
+    }
+  }
+
+  Future<void> _startPreview() async {
+    try {
+      final preset = _buildPreviewPreset(_p);
+      await _previewController.play(preset);
+      _previewController.setMuted(false);
+      _previewController.setVolume(_p.masterGain.clamp(0.1, 1.0));
+      if (!mounted) return;
+      setState(() => _previewing = true);
+    } catch (e) {
+      _snack('Could not start preview: $e');
+      await _previewController.stop();
+      if (mounted) {
+        setState(() => _previewing = false);
+      }
+    }
+  }
+
+  Future<void> _stopPreview() async {
+    await _previewController.stop();
+    if (!mounted) return;
+    setState(() => _previewing = false);
+  }
+
+  Future<void> _applyLivePreview() async {
+    if (!_previewing) return;
+    await _previewController.stop();
+    if (!mounted) return;
+    await _startPreview();
+  }
+
+  SoundPreset _buildPreviewPreset(SyntheticSoundParams params) {
+    final category = _mapCategory(params.category);
+    final kind = params.toneMix < 0.15
+        ? SynthKind.noise
+        : (params.noiseMix < 0.15 ? SynthKind.tone : SynthKind.hybrid);
+    final baseGain = params.masterGain.clamp(0.05, 0.9).toDouble();
+    final noiseSmooth =
+        (0.02 + (1 - params.noiseMix).clamp(0.0, 1.0) * 0.18).toDouble();
+    final lowpassHz = params.lpCutoff.clamp(200, 19000).toDouble();
+    final highpassHz = params.baseFreq * 0.1;
+    final lfoHz = params.lfoRate.clamp(0.05, 8.0).toDouble();
+    final lfoDepth = params.lfoDepth.clamp(0.0, 1.0).toDouble();
+    final eventRate = (params.noiseFlutter * 30).clamp(0.0, 30.0).toDouble();
+    final eventDecay =
+        (0.015 + ((params.attack + params.release) / 6.0).clamp(0.0, 0.2))
+            .toDouble();
+    final eventGain = (params.noiseFlutter * 0.35).clamp(0.0, 0.6).toDouble();
+    final toneHz = kind == SynthKind.noise
+        ? null
+        : params.baseFreq.clamp(40.0, 2000.0);
+    final detuneRatio = math.pow(2, params.detuneCents / 1200.0).toDouble();
+    final secondToneHz =
+        toneHz == null ? null : (toneHz * detuneRatio).clamp(40.0, 2400.0);
+
+    return SoundPreset(
+      id: 'custom_preview',
+      name: params.name,
+      category: category,
+      kind: kind,
+      baseGain: baseGain,
+      noiseSmooth: noiseSmooth,
+      lowpassHz: lowpassHz,
+      highpassHz: highpassHz,
+      lfoHz: lfoHz,
+      lfoDepth: lfoDepth,
+      eventRate: eventRate,
+      eventDecay: eventDecay,
+      eventGain: eventGain,
+      toneHz: toneHz,
+      secondToneHz: secondToneHz,
+    );
+  }
+
+  SoundCategory _mapCategory(String raw) {
+    final normalized = raw.toLowerCase();
+    if (normalized.contains('ocean')) return SoundCategory.ocean;
+    if (normalized.contains('animal')) return SoundCategory.animals;
+    if (normalized.contains('forest') || normalized.contains('garden')) {
+      return SoundCategory.forest;
+    }
+    if (normalized.contains('fire')) return SoundCategory.fire;
+    if (normalized.contains('night') || normalized.contains('insect')) {
+      return SoundCategory.night;
+    }
+    if (normalized.contains('focus')) return SoundCategory.focus;
+    if (normalized.contains('pipe')) return SoundCategory.pipes;
+    if (normalized.contains('instrument')) {
+      return SoundCategory.instruments;
+    }
+    if (normalized.contains('rain') || normalized.contains('weather')) {
+      return SoundCategory.weather;
+    }
+    if (normalized.contains('wind')) return SoundCategory.weather;
+    return SoundCategory.weather;
+  }
+
   void _set(SyntheticSoundParams next) {
     setState(() => _p = next);
     _emit();
+    unawaited(_applyLivePreview());
   }
 }

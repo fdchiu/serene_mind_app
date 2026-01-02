@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../widgets/ambient_sound_player.dart';
 import '../widgets/breathing_orb.dart';
+import 'sound_designer_page.dart';
 
 class SoundsScreen extends StatelessWidget {
   const SoundsScreen({super.key});
@@ -27,6 +28,18 @@ class SoundsScreen extends StatelessWidget {
             const BreathingOrb(size: 200),
             const SizedBox(height: 20),
             const AmbientSoundPlayer(),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const SoundDesignerPage(),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.tune),
+              label: const Text('Customize Synth Sounds'),
+            ),
             const SizedBox(height: 24),
             _TipsCard(),
           ],
