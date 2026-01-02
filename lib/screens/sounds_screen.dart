@@ -1,11 +1,37 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../widgets/ambient_sound_player.dart';
 import '../widgets/breathing_orb.dart';
 import 'sound_designer_page.dart';
 
-class SoundsScreen extends StatelessWidget {
+class SoundsScreen extends StatefulWidget {
   const SoundsScreen({super.key});
+
+  @override
+  State<SoundsScreen> createState() => _SoundsScreenState();
+}
+
+class _SoundsScreenState extends State<SoundsScreen> {
+  final AmbientSoundPlayerController _ambientController =
+      AmbientSoundPlayerController();
+
+  Future<void> _openDesigner() async {
+    await _ambientController.stop();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const SoundDesignerPage(),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    unawaited(_ambientController.stop());
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,18 +53,12 @@ class SoundsScreen extends StatelessWidget {
             const SizedBox(height: 20),
             const BreathingOrb(size: 200),
             const SizedBox(height: 20),
-            const AmbientSoundPlayer(),
+            AmbientSoundPlayer(controller: _ambientController),
             const SizedBox(height: 16),
             ElevatedButton.icon(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const SoundDesignerPage(),
-                  ),
-                );
-              },
+              onPressed: _openDesigner,
               icon: const Icon(Icons.tune),
-              label: const Text('Customize Synth Sounds'),
+              label: const Text('Create'),
             ),
             const SizedBox(height: 24),
             _TipsCard(),
