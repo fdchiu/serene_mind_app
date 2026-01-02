@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
 
+import '../autopilot/engine/autopilot_engine.dart';
 import '../models/meditation_session.dart';
 import '../state/meditation_controller.dart';
 import '../widgets/ambient_sound_player.dart';
 import '../widgets/duration_selector.dart';
 import '../widgets/meditation_timer.dart';
 import '../widgets/mood_selector.dart';
+import '';
 
 enum _MeditationStep {
   duration,
@@ -78,6 +81,13 @@ class _MeditateScreenState extends State<MeditateScreen> {
       type: SessionType.timer,
     );
     await controller.saveSession(session);
+    final container = ProviderScope.containerOf(context);
+    container.read(autopilotEngineProvider.notifier).onSessionSaved(
+      durationSeconds: _actualDuration,
+      moodBefore: _moodBefore,
+      moodAfter: _moodAfter,
+    );
+
     if (!mounted) return;
     messenger.showSnackBar(const SnackBar(content: Text('Session saved')));
     _transitionToStep(_MeditationStep.complete);
