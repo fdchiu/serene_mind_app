@@ -9,11 +9,26 @@ NotifierProvider<AutopilotEngine, AutopilotState>(AutopilotEngine.new);
 class AutopilotEngine extends Notifier<AutopilotState> {
   final _store = AutopilotStore();
   int _lastTriggerMs = 0;
+  bool _inited = false;
 
   @override
   AutopilotState build() {
-    _init();
-    return AutopilotState.initial();
+    // Ensure init runs once per provider lifecycle.
+    if (!_inited) {
+      _inited = true;
+      _init();
+    }
+    return stateOrInitial();
+  }
+
+  AutopilotState stateOrInitial() {
+    // In Notifier, `state` is available, but in build we should return a value.
+    // On first build, state is unset, so return initial.
+    try {
+      return state;
+    } catch (_) {
+      return AutopilotState.initial();
+    }
   }
 
   Future<void> _init() async {
@@ -30,12 +45,9 @@ class AutopilotEngine extends Notifier<AutopilotState> {
   /// Call this ONLY when the app is reopened (background -> foreground).
   /// This is the ONLY place we emit triggers.
   void onAppReopen() {
-    // Update state first (optional)
     _update(arousalDelta: 0.02);
 
-    // Decide whether to auto-trigger the 90s reset
     final meetsThreshold = state.arousal > 0.72 && state.confidence > 0.4;
-
     print('[AUTOPILOT] arousal=${state.arousal} conf=${state.confidence}');
 
     if (!meetsThreshold) return;
@@ -56,8 +68,22 @@ class AutopilotEngine extends Notifier<AutopilotState> {
       arousalDelta: -0.08,
       confidenceDelta: 0.15,
     );
+  }
 
-    // IMPORTANT: no triggers here (per your requirement)
+  void submitCheckIn({
+    required double valence,
+    required double arousal,
+  }) {
+    final next = AutopilotState(
+      valence: valence.clamp(-1.0, 1.0),
+      arousal: arousal.clamp(0.0, 1.0),
+      confidence: 0.9,
+      trend: (valence - state.valence),
+      lastUpdatedMs: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    state = next;
+    _store.save(next);
   }
 
   void _maybeTriggerQuickReset(String reason) {

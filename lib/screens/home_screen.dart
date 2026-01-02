@@ -8,6 +8,8 @@ import '../widgets/daily_quote_card.dart';
 import '../widgets/stats_card.dart';
 import '../widgets/theme_palette_sheet.dart';
 import '../state/theme_controller.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' as riverpod;
+import '../autopilot/engine/autopilot_engine.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({
@@ -71,6 +73,9 @@ class HomeScreen extends StatelessWidget {
             ),
             const SizedBox(height: 24),
             DailyQuoteCard(quote: controller.quote),
+            const SizedBox(height: 24),
+            _QuickCheckInCard(),
+            const SizedBox(height: 24),
             const SizedBox(height: 24),
             Text(
               'Quick Start',
@@ -137,6 +142,8 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+
+
 }
 
 class _HeroHeader extends StatelessWidget {
@@ -254,6 +261,147 @@ class _QuickActionCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _QuickCheckInCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _openCheckInSheet(context),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: glassDecoration(context),
+        child: Row(
+          children: [
+            Icon(Icons.favorite_outline,
+                color: Theme.of(context).colorScheme.primary),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Quick Check-in',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  Text('10 seconds to calibrate Autopilot',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelMedium
+                          ?.copyWith(color: Colors.white70)),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openCheckInSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor:
+      Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
+      builder: (_) => const _AutopilotCheckInSheet(),
+    );
+  }
+}
+class _AutopilotCheckInSheet extends StatefulWidget {
+  const _AutopilotCheckInSheet();
+
+  @override
+  State<_AutopilotCheckInSheet> createState() => _AutopilotCheckInSheetState();
+}
+
+class _AutopilotCheckInSheetState extends State<_AutopilotCheckInSheet> {
+  // valence: -1..+1, arousal: 0..1
+  double _valence = 0.0;
+  double _arousal = 0.4;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        16,
+        20,
+        24 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Quick Check-in',
+              style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          Text(
+            'This helps Autopilot understand your baseline today.',
+            style: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.copyWith(color: Colors.white70),
+          ),
+          const SizedBox(height: 18),
+
+          Text('Valence (negative ↔ positive)',
+              style: Theme.of(context).textTheme.titleMedium),
+          Slider(
+            value: _valence,
+            min: -1.0,
+            max: 1.0,
+            divisions: 20,
+            label: _valence.toStringAsFixed(2),
+            onChanged: (v) => setState(() => _valence = v),
+          ),
+
+          const SizedBox(height: 8),
+          Text('Arousal (calm ↔ activated)',
+              style: Theme.of(context).textTheme.titleMedium),
+          Slider(
+            value: _arousal,
+            min: 0.0,
+            max: 1.0,
+            divisions: 20,
+            label: _arousal.toStringAsFixed(2),
+            onChanged: (v) => setState(() => _arousal = v),
+          ),
+
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  child: const Text('Cancel'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    final container =
+                    riverpod.ProviderScope.containerOf(context);
+                    container
+                        .read(autopilotEngineProvider.notifier)
+                        .submitCheckIn(valence: _valence, arousal: _arousal);
+
+                    Navigator.of(context).maybePop();
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Check-in saved')),
+                    );
+                  },
+                  child: const Text('Save'),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
