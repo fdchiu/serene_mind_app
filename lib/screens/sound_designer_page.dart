@@ -16,6 +16,144 @@ import '../data/sound_preset.dart';
 /// Model
 /// -------------------------------
 
+// --- Add near the top of the file (below enums), or inside the State class file scope.
+
+class MacroState {
+  final double intensity; // 0..1
+  final double warmth;    // 0..1 (darker -> brighter)
+  final double movement;  // 0..1
+  final double texture;   // 0..1 (noise -> tone)
+  final double tone;      // 0..1 (low -> high pitch)
+
+  const MacroState({
+    required this.intensity,
+    required this.warmth,
+    required this.movement,
+    required this.texture,
+    required this.tone,
+  });
+
+  MacroState copyWith({
+    double? intensity,
+    double? warmth,
+    double? movement,
+    double? texture,
+    double? tone,
+  }) {
+    return MacroState(
+      intensity: intensity ?? this.intensity,
+      warmth: warmth ?? this.warmth,
+      movement: movement ?? this.movement,
+      texture: texture ?? this.texture,
+      tone: tone ?? this.tone,
+    );
+  }
+
+  static const defaults = MacroState(
+    intensity: 0.55,
+    warmth: 0.40,
+    movement: 0.35,
+    texture: 0.35,
+    tone: 0.35,
+  );
+}
+
+double _lerp(double a, double b, double t) => a + (b - a) * t.clamp(0.0, 1.0);
+
+double _clamp01(double v) => v.clamp(0.0, 1.0);
+
+/// Category-aware macro mapping.
+/// - Keeps changes safe and perceptual.
+/// - Does not try to be "perfect synthesis"; the goal is usability.
+SyntheticSoundParams applyMacrosToParams(
+    SyntheticSoundParams p,
+    MacroState m,
+    ) {
+  final cat = p.category.toLowerCase();
+
+  // Bias defaults by category.
+  // These are intentionally conservative to avoid silence/harshness.
+  final bool isOcean = cat.contains('ocean');
+  final bool isForest = cat.contains('forest') || cat.contains('garden');
+  final bool isFire = cat.contains('fire');
+  final bool isNight = cat.contains('night') || cat.contains('insect');
+  final bool isFocus = cat.contains('focus');
+  final bool isRain = cat.contains('rain') || cat.contains('wind');
+
+  // Intensity: primarily master gain, plus a bit of event energy for fire/rain.
+  final masterGain = _lerp(0.20, 0.90, m.intensity);
+
+  // Warmth: map to lowpass cutoff (darker->brighter).
+  // Category constrains ranges to stay plausible.
+  final cutoffMin = isOcean ? 350.0 : isFire ? 700.0 : isFocus ? 900.0 : 500.0;
+  final cutoffMax = isOcean ? 4200.0 : isFire ? 9000.0 : isFocus ? 12000.0 : 8000.0;
+  final lpCutoff = _lerp(cutoffMin, cutoffMax, m.warmth);
+
+  // Movement: LFO rate/depth + flutter. Keep LFO conservative in Focus.
+  final lfoRateMax = isFocus ? 0.9 : 2.2;
+  final lfoRate = _lerp(0.06, lfoRateMax, m.movement);
+  final lfoDepth = _lerp(isFocus ? 0.05 : 0.08, isFocus ? 0.35 : 0.60, m.movement);
+
+  // Texture: noise <-> tone balance
+  // texture=0 => more noise, texture=1 => more tone
+  // Keep hybrid in the middle; avoid both near zero.
+  final toneMix = _lerp(0.15, 0.90, m.texture);
+  final noiseMix = _lerp(0.90, 0.15, m.texture);
+
+  // Tone: base frequency. Different bands by category.
+  final baseMin = isOcean ? 70.0 : isForest ? 90.0 : isNight ? 160.0 : isFire ? 120.0 : 90.0;
+  final baseMax = isOcean ? 240.0 : isForest ? 320.0 : isNight ? 900.0 : isFire ? 520.0 : 420.0;
+  final baseFreq = _lerp(baseMin, baseMax, m.tone);
+
+  // Flutter: more in fire/rain, less in focus.
+  final flutterMax = isFocus ? 0.22 : isFire ? 0.75 : isRain ? 0.60 : 0.45;
+  final noiseFlutter = _lerp(0.02, flutterMax, m.movement);
+
+  // Resonance: small movement with warmth (bright can take slightly higher Q, but cap).
+  final resonance = _lerp(0.45, isFire ? 1.8 : 1.2, (m.warmth * 0.6 + m.movement * 0.4));
+
+  // Detune: subtle chorus feel; keep it near 0 for focus.
+  final detune = isFocus ? _lerp(-2.0, 2.0, m.movement) : _lerp(-8.0, 8.0, m.movement);
+
+  // Noise color: warmer categories pick pink/brown.
+  final NoiseColor noiseColor = isOcean || isForest
+      ? NoiseColor.pink
+      : isNight
+      ? NoiseColor.brown
+      : NoiseColor.white;
+
+  // Envelope: keep attack short and release moderate; vary slightly with movement.
+  final attack = _lerp(0.01, 0.18, (1.0 - m.movement));
+  final release = _lerp(isFocus ? 0.35 : 0.60, isFocus ? 1.6 : 2.4, (1.0 - m.movement));
+
+  // Partials: your synth currently doesn't use partialCount/partialSpread in DSP,
+  // but keep meaningful values for future.
+  final partialCount = (1 + (m.texture * 5)).round().clamp(1, 8);
+  final partialSpread = _lerp(0.08, 0.45, m.warmth);
+
+  // LFO target: cutoff is the most perceptually safe default.
+  final lfoTarget = LfoTarget.cutoff;
+
+  return p.copyWith(
+    masterGain: masterGain,
+    lpCutoff: lpCutoff,
+    lpResonance: resonance,
+    lfoRate: lfoRate,
+    lfoDepth: lfoDepth,
+    noiseMix: _clamp01(noiseMix),
+    toneMix: _clamp01(toneMix),
+    baseFreq: baseFreq,
+    detuneCents: detune,
+    noiseFlutter: _clamp01(noiseFlutter),
+    noiseColor: noiseColor,
+    attack: attack,
+    release: release,
+    partialCount: partialCount,
+    partialSpread: partialSpread,
+    lfoTarget: lfoTarget,
+  );
+}
+
 class SyntheticSoundParams {
   // Identity
   final String category; // e.g. "Ocean", "Forest", "Fire", "Night", etc.
@@ -255,10 +393,7 @@ class PresetStore {
 /// -------------------------------
 
 class SoundDesignerPage extends StatefulWidget {
-  /// Provide this callback to apply parameters into your synth engine.
   final ValueChanged<SyntheticSoundParams>? onChanged;
-
-  /// Optional initial params (e.g. coming from a preset).
   final SyntheticSoundParams? initial;
 
   const SoundDesignerPage({
@@ -277,23 +412,24 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
 
   late SyntheticSoundParams _p;
 
-  // Saved presets (id -> preset)
+  // Macros
+  MacroState _m = MacroState.defaults;
+
   Map<String, SyntheticSoundParams> _saved = {};
   String? _selectedPresetId;
   bool _previewing = false;
 
-  // Name field should reflect preset applies (TextFormField initialValue does not update)
   late final TextEditingController _nameCtrl;
 
-  // Debounce + serialization to prevent overlapping play()/stop() races.
   Timer? _previewDebounce;
   Future<void> _previewSerial = Future.value();
   int _previewEpoch = 0;
 
-  // Snack throttling (prevents spam while dragging sliders)
   int _lastSnackMs = 0;
 
-  // UI categories
+  // Advanced collapsed state
+  bool _showAdvanced = false;
+
   static const _categories = <String>[
     'Ocean',
     'Animal',
@@ -348,9 +484,7 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
     setState(() => _saved = all);
   }
 
-  void _emit() {
-    widget.onChanged?.call(_p);
-  }
+  void _emit() => widget.onChanged?.call(_p);
 
   String _makeId(SyntheticSoundParams p) {
     final safeName = p.name.trim().isEmpty ? 'Untitled' : p.name.trim();
@@ -452,7 +586,7 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
   @override
   void dispose() {
     _previewDebounce?.cancel();
-    _previewEpoch++; // invalidate in-flight preview tasks
+    _previewEpoch++;
     unawaited(_previewController.stop());
     _nameCtrl.dispose();
     super.dispose();
@@ -460,166 +594,235 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
 
   void _snack(String msg) {
     if (!mounted) return;
-
     final now = DateTime.now().millisecondsSinceEpoch;
-    // Throttle noisy errors while dragging sliders
     if (now - _lastSnackMs < 600) return;
     _lastSnackMs = now;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final t = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sound Designer'),
         actions: [
-          IconButton(
-            tooltip: 'Import',
-            onPressed: _importPreset,
-            icon: const Icon(Icons.file_open),
-          ),
-          IconButton(
-            tooltip: 'Export',
-            onPressed: _exportSelected,
-            icon: const Icon(Icons.ios_share),
-          ),
-          IconButton(
-            tooltip: 'Save',
-            onPressed: _saveCurrent,
-            icon: const Icon(Icons.save),
-          ),
+          IconButton(tooltip: 'Import', onPressed: _importPreset, icon: const Icon(Icons.file_open)),
+          IconButton(tooltip: 'Export', onPressed: _exportSelected, icon: const Icon(Icons.ios_share)),
+          IconButton(tooltip: 'Save', onPressed: _saveCurrent, icon: const Icon(Icons.save)),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _sectionHeader('Preset'),
-          _presetRow(theme),
-          const SizedBox(height: 16),
+          _cardSectionTitle(context, 'Presets'),
+          _presetCard(),
+          const SizedBox(height: 12),
 
-          _sectionHeader('Identity'),
+          _cardSectionTitle(context, 'Quick Controls'),
+          _macroCard(t),
+          const SizedBox(height: 12),
+
+          _cardSectionTitle(context, 'Identity'),
           _identityCard(),
+          const SizedBox(height: 12),
+
+          _advancedHeaderCard(),
+          if (_showAdvanced) ...[
+            const SizedBox(height: 12),
+            _expansionCard(
+              title: 'Mixer',
+              children: [
+                _slider(
+                  label: 'Master Gain',
+                  value: _p.masterGain,
+                  min: 0,
+                  max: 1,
+                  format: (v) => v.toStringAsFixed(2),
+                  onChanged: (v) => _set(_p.copyWith(masterGain: v)),
+                ),
+                _slider(
+                  label: 'Noise Mix',
+                  value: _p.noiseMix,
+                  min: 0,
+                  max: 1,
+                  format: (v) => v.toStringAsFixed(2),
+                  onChanged: (v) => _set(_p.copyWith(noiseMix: v)),
+                ),
+                _slider(
+                  label: 'Tone Mix',
+                  value: _p.toneMix,
+                  min: 0,
+                  max: 1,
+                  format: (v) => v.toStringAsFixed(2),
+                  onChanged: (v) => _set(_p.copyWith(toneMix: v)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _expansionCard(
+              title: 'Noise',
+              children: [
+                DropdownButtonFormField<NoiseColor>(
+                  value: _p.noiseColor,
+                  decoration: const InputDecoration(
+                    labelText: 'Noise color',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: NoiseColor.values
+                      .map((c) => DropdownMenuItem(value: c, child: Text(c.name)))
+                      .toList(),
+                  onChanged: (v) => _set(_p.copyWith(noiseColor: v)),
+                ),
+                const SizedBox(height: 12),
+                _slider(
+                  label: 'Noise Flutter',
+                  value: _p.noiseFlutter,
+                  min: 0,
+                  max: 1,
+                  format: (v) => v.toStringAsFixed(2),
+                  onChanged: (v) => _set(_p.copyWith(noiseFlutter: v)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _expansionCard(
+              title: 'Tone / Partials',
+              children: [
+                _slider(
+                  label: 'Base Frequency (Hz)',
+                  value: _p.baseFreq,
+                  min: 40,
+                  max: 1200,
+                  format: (v) => v.toStringAsFixed(0),
+                  onChanged: (v) => _set(_p.copyWith(baseFreq: v)),
+                ),
+                _slider(
+                  label: 'Detune (cents)',
+                  value: _p.detuneCents,
+                  min: -50,
+                  max: 50,
+                  format: (v) => v.toStringAsFixed(1),
+                  onChanged: (v) => _set(_p.copyWith(detuneCents: v)),
+                ),
+                _intSlider(
+                  label: 'Partial Count',
+                  value: _p.partialCount,
+                  min: 1,
+                  max: 8,
+                  onChanged: (v) => _set(_p.copyWith(partialCount: v)),
+                ),
+                _slider(
+                  label: 'Partial Spread',
+                  value: _p.partialSpread,
+                  min: 0,
+                  max: 1,
+                  format: (v) => v.toStringAsFixed(2),
+                  onChanged: (v) => _set(_p.copyWith(partialSpread: v)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _expansionCard(
+              title: 'Envelope',
+              children: [
+                _slider(
+                  label: 'Attack (s)',
+                  value: _p.attack,
+                  min: 0,
+                  max: 2,
+                  format: (v) => v.toStringAsFixed(2),
+                  onChanged: (v) => _set(_p.copyWith(attack: v)),
+                ),
+                _slider(
+                  label: 'Release (s)',
+                  value: _p.release,
+                  min: 0,
+                  max: 5,
+                  format: (v) => v.toStringAsFixed(2),
+                  onChanged: (v) => _set(_p.copyWith(release: v)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _expansionCard(
+              title: 'Filter',
+              children: [
+                _slider(
+                  label: 'Brightness (LP Cutoff)',
+                  value: _p.lpCutoff,
+                  min: 50,
+                  max: 20000,
+                  format: (v) => v.toStringAsFixed(0),
+                  onChanged: (v) => _set(_p.copyWith(lpCutoff: v)),
+                ),
+                _slider(
+                  label: 'Edge (Resonance)',
+                  value: _p.lpResonance,
+                  min: 0.1,
+                  max: 10,
+                  format: (v) => v.toStringAsFixed(2),
+                  onChanged: (v) => _set(_p.copyWith(lpResonance: v)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _expansionCard(
+              title: 'LFO',
+              children: [
+                DropdownButtonFormField<LfoTarget>(
+                  value: _p.lfoTarget,
+                  decoration: const InputDecoration(
+                    labelText: 'LFO target',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: LfoTarget.values
+                      .map((t) => DropdownMenuItem(value: t, child: Text(t.name)))
+                      .toList(),
+                  onChanged: (v) => _set(_p.copyWith(lfoTarget: v)),
+                ),
+                const SizedBox(height: 12),
+                _slider(
+                  label: 'Wobble Rate (Hz)',
+                  value: _p.lfoRate,
+                  min: 0,
+                  max: 10,
+                  format: (v) => v.toStringAsFixed(2),
+                  onChanged: (v) => _set(_p.copyWith(lfoRate: v)),
+                ),
+                _slider(
+                  label: 'Wobble Depth',
+                  value: _p.lfoDepth,
+                  min: 0,
+                  max: 1,
+                  format: (v) => v.toStringAsFixed(2),
+                  onChanged: (v) => _set(_p.copyWith(lfoDepth: v)),
+                ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 16),
+          _previewCard(),
           const SizedBox(height: 16),
 
-          _sectionHeader('Mixer'),
-          _sliderCard([
-            _slider(
-              label: 'Master Gain',
-              value: _p.masterGain,
-              min: 0,
-              max: 1,
-              format: (v) => v.toStringAsFixed(2),
-              onChanged: (v) => _set(_p.copyWith(masterGain: v)),
-            ),
-            _slider(
-              label: 'Noise Mix',
-              value: _p.noiseMix,
-              min: 0,
-              max: 1,
-              format: (v) => v.toStringAsFixed(2),
-              onChanged: (v) => _set(_p.copyWith(noiseMix: v)),
-            ),
-            _slider(
-              label: 'Tone Mix',
-              value: _p.toneMix,
-              min: 0,
-              max: 1,
-              format: (v) => v.toStringAsFixed(2),
-              onChanged: (v) => _set(_p.copyWith(toneMix: v)),
-            ),
-          ]),
-          const SizedBox(height: 16),
-
-          _sectionHeader('Noise'),
-          _noiseCard(),
-          const SizedBox(height: 16),
-
-          _sectionHeader('Tone / Partials'),
-          _toneCard(),
-          const SizedBox(height: 16),
-
-          _sectionHeader('Envelope'),
-          _sliderCard([
-            _slider(
-              label: 'Attack (s)',
-              value: _p.attack,
-              min: 0,
-              max: 2,
-              format: (v) => v.toStringAsFixed(2),
-              onChanged: (v) => _set(_p.copyWith(attack: v)),
-            ),
-            _slider(
-              label: 'Release (s)',
-              value: _p.release,
-              min: 0,
-              max: 5,
-              format: (v) => v.toStringAsFixed(2),
-              onChanged: (v) => _set(_p.copyWith(release: v)),
-            ),
-          ]),
-          const SizedBox(height: 16),
-
-          _sectionHeader('Filter'),
-          _sliderCard([
-            _slider(
-              label: 'LP Cutoff (Hz)',
-              value: _p.lpCutoff,
-              min: 50,
-              max: 20000,
-              format: (v) => v.toStringAsFixed(0),
-              onChanged: (v) => _set(_p.copyWith(lpCutoff: v)),
-            ),
-            _slider(
-              label: 'Resonance (Q)',
-              value: _p.lpResonance,
-              min: 0.1,
-              max: 10,
-              format: (v) => v.toStringAsFixed(2),
-              onChanged: (v) => _set(_p.copyWith(lpResonance: v)),
-            ),
-          ]),
-          const SizedBox(height: 16),
-
-          _sectionHeader('LFO'),
-          _lfoCard(),
-          const SizedBox(height: 32),
-
-          FilledButton.icon(
-            onPressed: _togglePreview,
-            icon: Icon(_previewing ? Icons.stop : Icons.play_arrow),
-            label: Text(_previewing ? 'Stop Preview' : 'Play Preview'),
-          ),
-          const SizedBox(height: 8),
-
-          FilledButton.icon(
-            onPressed: _saveCurrent,
-            icon: const Icon(Icons.save),
-            label: const Text('Save Preset'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _importPreset,
-            icon: const Icon(Icons.file_open),
-            label: const Text('Import Preset (.json)'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _exportSelected,
-            icon: const Icon(Icons.ios_share),
-            label: const Text('Export Selected Preset'),
-          ),
+          // Secondary actions
+          _actionsCard(),
         ],
       ),
     );
   }
 
-  Widget _presetRow(ThemeData theme) {
+  Widget _cardSectionTitle(BuildContext context, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+    );
+  }
+
+  Widget _presetCard() {
     final items = _saved.entries.toList()
       ..sort((a, b) => ('${a.value.category} ${a.value.name}')
           .compareTo('${b.value.category} ${b.value.name}'));
@@ -630,7 +833,6 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
         child: Row(
           children: [
             Expanded(
-              // IMPORTANT: nullable type to allow "None"
               child: DropdownButtonFormField<String?>(
                 value: _selectedPresetId,
                 decoration: const InputDecoration(
@@ -638,16 +840,11 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
                   border: OutlineInputBorder(),
                 ),
                 items: [
-                  const DropdownMenuItem<String?>(
-                    value: null,
-                    child: Text('— None —'),
-                  ),
-                  ...items.map((e) {
-                    return DropdownMenuItem<String?>(
-                      value: e.key,
-                      child: Text('${e.value.category} / ${e.value.name}'),
-                    );
-                  }),
+                  const DropdownMenuItem<String?>(value: null, child: Text('— None —')),
+                  ...items.map((e) => DropdownMenuItem<String?>(
+                    value: e.key,
+                    child: Text('${e.value.category} / ${e.value.name}'),
+                  )),
                 ],
                 onChanged: (v) {
                   if (v == null) {
@@ -670,6 +867,98 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
     );
   }
 
+  Widget _macroCard(ThemeData theme) {
+    // Apply button is optional; I prefer immediate apply with debounce.
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            _macroSlider(
+              label: 'Intensity',
+              value: _m.intensity,
+              help: 'Overall strength and loudness.',
+              onChanged: (v) => _setMacros(_m.copyWith(intensity: v)),
+            ),
+            _macroSlider(
+              label: 'Warmth',
+              value: _m.warmth,
+              help: 'Darker ↔ brighter tone.',
+              onChanged: (v) => _setMacros(_m.copyWith(warmth: v)),
+            ),
+            _macroSlider(
+              label: 'Movement',
+              value: _m.movement,
+              help: 'How alive and evolving it feels.',
+              onChanged: (v) => _setMacros(_m.copyWith(movement: v)),
+            ),
+            _macroSlider(
+              label: 'Texture',
+              value: _m.texture,
+              help: 'Noise ↔ tone balance.',
+              onChanged: (v) => _setMacros(_m.copyWith(texture: v)),
+            ),
+            _macroSlider(
+              label: 'Tone',
+              value: _m.tone,
+              help: 'Lower ↔ higher pitch region.',
+              onChanged: (v) => _setMacros(_m.copyWith(tone: v)),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      setState(() => _m = MacroState.defaults);
+                      _set(applyMacrosToParams(_p, _m));
+                    },
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Reset macros'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _randomVariation,
+                    icon: const Icon(Icons.auto_awesome),
+                    label: const Text('Variation'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _macroSlider({
+    required String label,
+    required double value,
+    required String help,
+    required ValueChanged<double> onChanged,
+  }) {
+    final t = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(label, style: t.textTheme.titleSmall)),
+              Text(value.toStringAsFixed(2), style: t.textTheme.bodySmall),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(help, style: t.textTheme.bodySmall),
+          Slider(value: value, min: 0, max: 1, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+
   Widget _identityCard() {
     return Card(
       child: Padding(
@@ -682,10 +971,12 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
                 labelText: 'Category',
                 border: OutlineInputBorder(),
               ),
-              items: _categories
-                  .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                  .toList(),
-              onChanged: (v) => _set(_p.copyWith(category: v ?? 'Custom')),
+              items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+              onChanged: (v) {
+                final next = _p.copyWith(category: v ?? 'Custom');
+                // When category changes, re-apply macros to get category-aware defaults.
+                _set(applyMacrosToParams(next, _m));
+              },
             ),
             const SizedBox(height: 12),
             TextField(
@@ -702,34 +993,64 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
     );
   }
 
-  Widget _noiseCard() {
+  Widget _advancedHeaderCard() {
+    return Card(
+      child: ListTile(
+        title: const Text('Advanced Controls'),
+        subtitle: const Text('Fine-tune the sound. Most users won’t need this.'),
+        trailing: Icon(_showAdvanced ? Icons.expand_less : Icons.expand_more),
+        onTap: () => setState(() => _showAdvanced = !_showAdvanced),
+      ),
+    );
+  }
+
+  Widget _expansionCard({required String title, required List<Widget> children}) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            ...children,
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _previewCard() {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            DropdownButtonFormField<NoiseColor>(
-              value: _p.noiseColor,
-              decoration: const InputDecoration(
-                labelText: 'Noise color',
-                border: OutlineInputBorder(),
-              ),
-              items: NoiseColor.values
-                  .map((c) => DropdownMenuItem(
-                value: c,
-                child: Text(c.name),
-              ))
-                  .toList(),
-              onChanged: (v) => _set(_p.copyWith(noiseColor: v)),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _togglePreview,
+                    icon: Icon(_previewing ? Icons.stop : Icons.play_arrow),
+                    label: Text(_previewing ? 'Stop Preview' : 'Play Preview'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                IconButton(
+                  tooltip: 'Mute',
+                  onPressed: () {
+                    // Toggle mute quickly (UI-state-free; use controller state if you want)
+                    _previewController.setMuted(false);
+                    _snack('Preview is unmuted.');
+                  },
+                  icon: const Icon(Icons.volume_up),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            _slider(
-              label: 'Noise Flutter',
-              value: _p.noiseFlutter,
-              min: 0,
-              max: 1,
-              format: (v) => v.toStringAsFixed(2),
-              onChanged: (v) => _set(_p.copyWith(noiseFlutter: v)),
+            const SizedBox(height: 8),
+            Text(
+              'Tip: Use Quick Controls for most adjustments. Advanced is for precision.',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
@@ -737,78 +1058,28 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
     );
   }
 
-  Widget _toneCard() {
-    return _sliderCard([
-      _slider(
-        label: 'Base Frequency (Hz)',
-        value: _p.baseFreq,
-        min: 40,
-        max: 1200,
-        format: (v) => v.toStringAsFixed(0),
-        onChanged: (v) => _set(_p.copyWith(baseFreq: v)),
-      ),
-      _slider(
-        label: 'Detune (cents)',
-        value: _p.detuneCents,
-        min: -50,
-        max: 50,
-        format: (v) => v.toStringAsFixed(1),
-        onChanged: (v) => _set(_p.copyWith(detuneCents: v)),
-      ),
-      _intSlider(
-        label: 'Partial Count',
-        value: _p.partialCount,
-        min: 1,
-        max: 8,
-        onChanged: (v) => _set(_p.copyWith(partialCount: v)),
-      ),
-      _slider(
-        label: 'Partial Spread',
-        value: _p.partialSpread,
-        min: 0,
-        max: 1,
-        format: (v) => v.toStringAsFixed(2),
-        onChanged: (v) => _set(_p.copyWith(partialSpread: v)),
-      ),
-    ]);
-  }
-
-  Widget _lfoCard() {
+  Widget _actionsCard() {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            DropdownButtonFormField<LfoTarget>(
-              value: _p.lfoTarget,
-              decoration: const InputDecoration(
-                labelText: 'LFO target',
-                border: OutlineInputBorder(),
-              ),
-              items: LfoTarget.values
-                  .map((t) => DropdownMenuItem(
-                value: t,
-                child: Text(t.name),
-              ))
-                  .toList(),
-              onChanged: (v) => _set(_p.copyWith(lfoTarget: v)),
+            FilledButton.icon(
+              onPressed: _saveCurrent,
+              icon: const Icon(Icons.save),
+              label: const Text('Save Preset'),
             ),
-            const SizedBox(height: 12),
-            _slider(
-              label: 'LFO Rate (Hz)',
-              value: _p.lfoRate,
-              min: 0,
-              max: 10,
-              format: (v) => v.toStringAsFixed(2),
-              onChanged: (v) => _set(_p.copyWith(lfoRate: v)),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _importPreset,
+              icon: const Icon(Icons.file_open),
+              label: const Text('Import Preset (.json)'),
             ),
-            _slider(
-              label: 'LFO Depth',
-              value: _p.lfoDepth,
-              min: 0,
-              max: 1,
-              format: (v) => v.toStringAsFixed(2),
-              onChanged: (v) => _set(_p.copyWith(lfoDepth: v)),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _exportSelected,
+              icon: const Icon(Icons.ios_share),
+              label: const Text('Export Selected Preset'),
             ),
           ],
         ),
@@ -816,82 +1087,41 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
     );
   }
 
-  Widget _sectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(title, style: Theme.of(context).textTheme.titleMedium),
-    );
+  // ----------------------------
+  // Setters: macros + params
+  // ----------------------------
+
+  void _setMacros(MacroState next) {
+    setState(() => _m = next);
+    _set(applyMacrosToParams(_p, _m));
   }
 
-  Widget _sliderCard(List<Widget> children) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(children: children),
-      ),
+  void _randomVariation() {
+    // Small, safe random walk around current macros.
+    final r = math.Random();
+    double bump(double v, double radius) => (v + (r.nextDouble() * 2 - 1) * radius).clamp(0.0, 1.0);
+
+    final next = _m.copyWith(
+      intensity: bump(_m.intensity, 0.10),
+      warmth: bump(_m.warmth, 0.12),
+      movement: bump(_m.movement, 0.12),
+      texture: bump(_m.texture, 0.12),
+      tone: bump(_m.tone, 0.12),
     );
+
+    setState(() => _m = next);
+    _set(applyMacrosToParams(_p, _m));
   }
 
-  Widget _slider({
-    required String label,
-    required double value,
-    required double min,
-    required double max,
-    required String Function(double) format,
-    required ValueChanged<double> onChanged,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(child: Text(label)),
-              Text(format(value), style: const TextStyle(fontFeatures: [])),
-            ],
-          ),
-          Slider(
-            value: value.clamp(min, max),
-            min: min,
-            max: max,
-            onChanged: onChanged,
-          ),
-        ],
-      ),
-    );
+  void _set(SyntheticSoundParams next) {
+    setState(() => _p = next);
+    _emit();
+    _scheduleLivePreviewUpdate();
   }
 
-  Widget _intSlider({
-    required String label,
-    required int value,
-    required int min,
-    required int max,
-    required ValueChanged<int> onChanged,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(child: Text(label)),
-              Text('$value'),
-            ],
-          ),
-          Slider(
-            value: value.toDouble(),
-            min: min.toDouble(),
-            max: max.toDouble(),
-            divisions: (max - min),
-            label: '$value',
-            onChanged: (v) => onChanged(v.round().clamp(min, max)),
-          ),
-        ],
-      ),
-    );
-  }
+  // ----------------------------
+  // Preview pipeline (your existing logic preserved)
+  // ----------------------------
 
   Future<void> _togglePreview() async {
     if (_previewing) {
@@ -902,9 +1132,7 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
   }
 
   Future<void> _startPreview() async {
-    // invalidate any in-flight work from prior sessions
     _previewEpoch++;
-
     try {
       await _playPreviewWithCurrentParams();
       if (!mounted) return;
@@ -912,14 +1140,12 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
     } catch (e) {
       _snack('Could not start preview: $e');
       await _previewController.stop();
-      if (mounted) {
-        setState(() => _previewing = false);
-      }
+      if (mounted) setState(() => _previewing = false);
     }
   }
 
   Future<void> _stopPreview() async {
-    _previewEpoch++; // cancel queued tasks
+    _previewEpoch++;
     _previewDebounce?.cancel();
     await _previewController.stop();
     if (!mounted) return;
@@ -928,7 +1154,6 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
 
   void _scheduleLivePreviewUpdate() {
     if (!_previewing) return;
-
     _previewDebounce?.cancel();
     _previewDebounce = Timer(const Duration(milliseconds: 120), () {
       unawaited(_applyLivePreviewQueued());
@@ -937,14 +1162,12 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
 
   Future<void> _applyLivePreviewQueued() async {
     if (!_previewing) return;
-
     final int myEpoch = ++_previewEpoch;
 
-    // Serialize all preview updates to avoid overlapping play()/stop() races.
     _previewSerial = _previewSerial.then((_) async {
       if (!mounted) return;
       if (!_previewing) return;
-      if (myEpoch != _previewEpoch) return; // stale update
+      if (myEpoch != _previewEpoch) return;
 
       try {
         await _playPreviewWithCurrentParams();
@@ -963,11 +1186,7 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
 
   Future<void> _playPreviewWithCurrentParams() async {
     final preset = _buildPreviewPreset(_p);
-
-    // If your AmbientController.play() restarts audio, the debounced+serialized calls
-    // prevent multiple overlapping restarts (main cause of the errors you saw).
     await _previewController.apply(preset);
-
     _previewController.setMuted(false);
     _previewController.setVolume(_p.masterGain.clamp(0.1, 1.0));
   }
@@ -990,12 +1209,9 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
     (0.015 + ((params.attack + params.release) / 6.0).clamp(0.0, 0.2))
         .toDouble();
     final eventGain = (params.noiseFlutter * 0.35).clamp(0.0, 0.6).toDouble();
-    final toneHz = kind == SynthKind.noise
-        ? null
-        : params.baseFreq.clamp(40.0, 2000.0);
+    final toneHz = kind == SynthKind.noise ? null : params.baseFreq.clamp(40.0, 2000.0);
     final detuneRatio = math.pow(2, params.detuneCents / 1200.0).toDouble();
-    final secondToneHz =
-    toneHz == null ? null : (toneHz * detuneRatio).clamp(40.0, 2400.0);
+    final secondToneHz = toneHz == null ? null : (toneHz * detuneRatio).clamp(40.0, 2400.0);
 
     return SoundPreset(
       id: 'custom_preview',
@@ -1020,38 +1236,82 @@ class _SoundDesignerPageState extends State<SoundDesignerPage> {
     final normalized = raw.toLowerCase();
     if (normalized.contains('ocean')) return SoundCategory.ocean;
     if (normalized.contains('animal')) return SoundCategory.animals;
-    if (normalized.contains('forest') || normalized.contains('garden')) {
-      return SoundCategory.forest;
-    }
+    if (normalized.contains('forest') || normalized.contains('garden')) return SoundCategory.forest;
     if (normalized.contains('fire')) return SoundCategory.fire;
-    if (normalized.contains('night') || normalized.contains('insect')) {
-      return SoundCategory.night;
-    }
+    if (normalized.contains('night') || normalized.contains('insect')) return SoundCategory.night;
     if (normalized.contains('focus')) return SoundCategory.focus;
     if (normalized.contains('pipe')) return SoundCategory.pipes;
-    if (normalized.contains('instrument')) {
-      return SoundCategory.instruments;
-    }
-    if (normalized.contains('rain') || normalized.contains('weather')) {
-      return SoundCategory.weather;
-    }
+    if (normalized.contains('instrument')) return SoundCategory.instruments;
+    if (normalized.contains('rain') || normalized.contains('weather')) return SoundCategory.weather;
     if (normalized.contains('wind')) return SoundCategory.weather;
     return SoundCategory.weather;
   }
 
-  void _set(SyntheticSoundParams next) {
-    setState(() {
-      _p = next;
-      // keep controller in sync if user edits from elsewhere (rare) or preset apply
-      if (_nameCtrl.text != next.name) {
-        // do not break cursor if user is typing
-        // only update if controller is not the active editor
-        // (simple heuristic: update when not focused)
-        // If you want perfect behavior, add a FocusNode.
-      }
-    });
+  // ----------------------------
+  // Slider widgets (theme-consistent)
+  // ----------------------------
 
-    _emit();
-    _scheduleLivePreviewUpdate();
+  Widget _slider({
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required String Function(double) format,
+    required ValueChanged<double> onChanged,
+  }) {
+    final t = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(label, style: t.textTheme.bodyMedium)),
+              Text(format(value), style: t.textTheme.bodySmall),
+            ],
+          ),
+          Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _intSlider({
+    required String label,
+    required int value,
+    required int min,
+    required int max,
+    required ValueChanged<int> onChanged,
+  }) {
+    final t = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(label, style: t.textTheme.bodyMedium)),
+              Text('$value', style: t.textTheme.bodySmall),
+            ],
+          ),
+          Slider(
+            value: value.toDouble(),
+            min: min.toDouble(),
+            max: max.toDouble(),
+            divisions: (max - min),
+            label: '$value',
+            onChanged: (v) => onChanged(v.round().clamp(min, max)),
+          ),
+        ],
+      ),
+    );
   }
 }
+
