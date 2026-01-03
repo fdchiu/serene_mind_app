@@ -58,7 +58,10 @@ class _SoundsScreenState extends State<SoundsScreen> {
             ElevatedButton.icon(
               onPressed: _openDesigner,
               icon: const Icon(Icons.tune),
-              label: const Text('Create'),
+              label: const Text(
+                'Create',
+                textAlign: TextAlign.center,
+              ),
             ),
             const SizedBox(height: 24),
             _TipsCard(),
