@@ -31,6 +31,7 @@ class SoundPreset {
   final double eventGain;
   final double? toneHz;
   final double? secondToneHz;
+  final double chirpMix;
 
   const SoundPreset({
     required this.id,
@@ -48,6 +49,7 @@ class SoundPreset {
     this.eventGain = 0.0,
     this.toneHz,
     this.secondToneHz,
+    this.chirpMix = 0.0,
   });
 }
 
@@ -152,6 +154,7 @@ const soundPresetCollections = [
         eventRate: 18,
         eventDecay: 0.1,
         eventGain: 0.28,
+        chirpMix: 0.6,
       ),
       const SoundPreset(
         id: 'morning_birds',
@@ -167,6 +170,7 @@ const soundPresetCollections = [
         eventRate: 0.8, // sparse calls
         eventDecay: 0.18, // chirp tail
         eventGain: 0.30, // audible but not spiky
+        chirpMix: 0.85,
       ),
       SoundPreset(
         id: 'synth_forest_breeze',
@@ -264,22 +268,24 @@ const soundPresetCollections = [
         eventRate: 28,
         eventDecay: 0.05,
         eventGain: 0.22,
+        chirpMix: 0.75,
       ),
-const SoundPreset(
-id: 'crickets_v2',
-name: 'Crickets',
-category: SoundCategory.night,
-kind: SynthKind.hybrid,
-baseGain: 0.24,
-noiseSmooth: 0.06,    // brighter hiss
-lowpassHz: 5200,      // very open top end
-highpassHz: 620,      // thin, bright timbre
-lfoHz: 0.28,
-lfoDepth: 0.14,
-eventRate: 10.0,      // rapid ticks
-eventDecay: 0.04,     // very short chirps
-eventGain: 0.26,      // ensure ticks are audible
-),
+      const SoundPreset(
+        id: 'crickets_v2',
+        name: 'Crickets',
+        category: SoundCategory.night,
+        kind: SynthKind.hybrid,
+        baseGain: 0.24,
+        noiseSmooth: 0.06, // brighter hiss
+        lowpassHz: 5200, // very open top end
+        highpassHz: 620, // thin, bright timbre
+        lfoHz: 0.28,
+        lfoDepth: 0.14,
+        eventRate: 10.0, // rapid ticks
+        eventDecay: 0.04, // very short chirps
+        eventGain: 0.26, // ensure ticks are audible
+        chirpMix: 0.9,
+      ),
 
       SoundPreset(
         id: 'synth_insects',
