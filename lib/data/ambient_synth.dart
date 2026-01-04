@@ -31,7 +31,17 @@ class AmbientSynth {
   double _lp2 = 0.0;
   double _eventEnv = 0.0;
   double _tonePhase = 0.0;
+  double _tonePhase2 = 0.0;
   double _lfoPhase = 0.0;
+  double _chirpPhase = 0.0;
+  double _chirpFreq = 0.0;
+  double _chirpEnv = 0.0;
+  double _hpState1 = 0.0;
+  double _hpState2 = 0.0;
+  double _hpPrevInput1 = 0.0;
+  double _hpPrevInput2 = 0.0;
+  double _postLp1 = 0.0;
+  double _postLp2 = 0.0;
 
   final Random _rng = Random();
 
@@ -216,6 +226,15 @@ class AmbientSynth {
     _lp = 0.0;
     _lp2 = 0.0;
     _eventEnv = 0.0;
+    _chirpPhase = 0.0;
+    _chirpFreq = 0.0;
+    _chirpEnv = 0.0;
+    _hpState1 = 0.0;
+    _hpState2 = 0.0;
+    _hpPrevInput1 = 0.0;
+    _hpPrevInput2 = 0.0;
+    _postLp1 = 0.0;
+    _postLp2 = 0.0;
     // Keep phases continuous by default.
   }
 
@@ -296,10 +315,20 @@ class AmbientSynth {
 
     final vol = (_muted ? 0.0 : _volume) * p.baseGain;
     final alpha = p.noiseSmooth;
-    final eventProb = p.eventRate / sampleRate;
+    final eventProb = (p.eventRate > 0 && p.eventGain > 0) ? p.eventRate / sampleRate : 0.0;
+    final decay = (p.eventDecay <= 0.0005) ? 0.0005 : p.eventDecay;
+    final envDecay = exp(-1 / (decay * sampleRate));
+    final hpCut = p.highpassHz;
+    final lpCut = p.lowpassHz;
+    final hpActive = hpCut > 0;
+    final lpActive = lpCut > 0 && lpCut < sampleRate * 0.49;
+    final hpCoeff = hpActive ? exp(-2 * pi * hpCut / sampleRate) : 0.0;
+    final lpCoeff = lpActive ? exp(-2 * pi * lpCut / sampleRate) : 0.0;
+    final lpAlpha = lpActive ? (1 - lpCoeff) : 0.0;
 
     for (int i = 0; i < n; i++) {
       double x = 0.0;
+      double chirp = 0.0;
 
       if (p.kind != SynthKind.tone) {
         final wn = _rng.nextDouble() * 2 - 1;
@@ -314,6 +343,12 @@ class AmbientSynth {
         x += sin(_tonePhase);
       }
 
+      if (p.kind != SynthKind.noise && p.secondToneHz != null) {
+        _tonePhase2 += 2 * pi * p.secondToneHz! / sampleRate;
+        if (_tonePhase2 > 2 * pi) _tonePhase2 -= 2 * pi;
+        x += sin(_tonePhase2);
+      }
+
       _lfoPhase += 2 * pi * p.lfoHz / sampleRate;
       if (_lfoPhase > 2 * pi) _lfoPhase -= 2 * pi;
       final lfo = sin(_lfoPhase) * 0.5 + 0.5;
@@ -321,15 +356,45 @@ class AmbientSynth {
 
       if (_rng.nextDouble() < eventProb) {
         _eventEnv = 1.0;
+        if (p.chirpMix > 0) {
+          _chirpEnv = 1.0;
+          _chirpPhase = 0.0;
+          _chirpFreq = _rng.nextDouble() * 5000 + 4000; // 4-9 kHz
+        }
       }
-      final decay = (p.eventDecay <= 0.0005) ? 0.0005 : p.eventDecay;
-      _eventEnv *= exp(-1 / (decay * sampleRate));
+
+      _eventEnv *= envDecay;
       x += _eventEnv * p.eventGain;
+
+      if (p.chirpMix > 0 && (eventProb > 0)) {
+        _chirpEnv *= envDecay;
+        _chirpPhase += 2 * pi * _chirpFreq / sampleRate;
+        if (_chirpPhase > 2 * pi) _chirpPhase -= 2 * pi;
+        chirp = sin(_chirpPhase) * _chirpEnv * p.eventGain * p.chirpMix;
+        x += chirp;
+      }
+
+      if (hpActive) {
+        _hpState1 = hpCoeff * (_hpState1 + x - _hpPrevInput1);
+        _hpPrevInput1 = x;
+        x = _hpState1;
+        _hpState2 = hpCoeff * (_hpState2 + x - _hpPrevInput2);
+        _hpPrevInput2 = x;
+        x = _hpState2;
+      }
+
+      if (lpActive) {
+        _postLp1 += lpAlpha * (x - _postLp1);
+        x = _postLp1;
+        _postLp2 += lpAlpha * (x - _postLp2);
+        x = _postLp2;
+      }
 
       _gainCurrent += (_gainTarget - _gainCurrent)
           .clamp(-_gainStepPerSample, _gainStepPerSample);
 
-      x = _tanh(x * vol) * _gainCurrent;
+      final driveInput = (x - chirp) + chirp * 0.65;
+      x = _tanh(driveInput * vol) * _gainCurrent;
       out[i] = (x.clamp(-1.0, 1.0) * 32767).round();
     }
 
