@@ -227,7 +227,14 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
     final uri = Uri.parse(track.url);
     final client = http.Client();
     try {
-      final response = await client.get(uri);
+      // Pixabay CDN can return 403s when a user agent / referrer is missing.
+      final response = await client.get(
+        uri,
+        headers: const {
+          'User-Agent': 'SereneMind/1.0 (+https://serenemind.app)',
+          'Referer': 'https://pixabay.com/',
+        },
+      );
       if (response.statusCode >= 200 && response.statusCode < 300) {
         await file.writeAsBytes(response.bodyBytes);
         return file;
