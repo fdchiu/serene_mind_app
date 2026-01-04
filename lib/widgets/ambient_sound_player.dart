@@ -11,6 +11,7 @@ import '../data/ambient_sounds.dart';
 import '../data/sound_preset.dart';
 import '../data/adaptive_soundscape_controller.dart';
 import '../soundscape_engine/engine_types.dart';
+import '../services/pixabay_proxy_client.dart';
 
 enum AmbientAudioSource { recordings, synth, adaptive }
 
@@ -71,12 +72,14 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
   String? _error;
 
   Directory? _cacheDir;
+  late final PixabayProxyClient _proxyClient;
 
   @override
   void initState() {
     super.initState();
     widget.controller?._attach(this);
     _player.setReleaseMode(ReleaseMode.loop);
+    _proxyClient = PixabayProxyClient();
   }
 
   @override
@@ -224,7 +227,8 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
     final file = File('${dir.path}/${track.id}.mp3');
     if (await file.exists()) return file;
 
-    final uri = Uri.parse(track.url);
+    final sourceUri = Uri.parse(track.url);
+    final uri = _proxyClient.rewriteIfPixabay(sourceUri);
     final client = http.Client();
     debugPrint("[_downloadTrack] url: ${track.url}");
     try {
