@@ -226,6 +226,7 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
 
     final uri = Uri.parse(track.url);
     final client = http.Client();
+    debugPrint("[_downloadTrack] url: ${track.url}");
     try {
       // Pixabay CDN can return 403s when a user agent / referrer is missing.
       final response = await client.get(
@@ -239,6 +240,7 @@ class _AmbientSoundPlayerState extends State<AmbientSoundPlayer> {
         await file.writeAsBytes(response.bodyBytes);
         return file;
       }
+      debugPrint('[_downloadTrack] response: ${response.statusCode}');
     } catch (error, stackTrace) {
       debugPrint('Failed to download ${track.id}: $error\n$stackTrace');
     } finally {
