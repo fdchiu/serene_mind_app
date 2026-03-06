@@ -1,4 +1,4 @@
-# Serene Mind Flutter
+# Serene Mind
 
 This directory contains the Flutter reimplementation of the Serene Mind Space meditation experience. It recreates the Vite/React app’s structure with native mobile widgets, persistent storage, and offline-friendly audio.
 
