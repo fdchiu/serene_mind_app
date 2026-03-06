@@ -11,9 +11,10 @@ import 'package:flutter/foundation.dart';
 /// Configure the base via a compile-time environment value:
 ///   --dart-define=PIXABAY_PROXY_BASE=https://yourdomain
 class PixabayProxyClient {
+  static const SERVER_URL = 'https://tartalabapi.onrender.com';
   PixabayProxyClient({
     String? proxyBaseUrl,
-  }) : _base = _normalizeBase(proxyBaseUrl ?? const String.fromEnvironment('PIXABAY_PROXY_BASE'));
+  }) : _base = _normalizeBase(proxyBaseUrl ?? SERVER_URL);// const String.fromEnvironment('PIXABAY_PROXY_BASE'));
 
   final Uri? _base;
 
@@ -22,7 +23,7 @@ class PixabayProxyClient {
   Uri rewriteIfPixabay(Uri original) {
     if (_base == null) return original;
     if (!_isPixabayCdn(original)) return original;
-    return _base!.replace(
+    return _base.replace(
       path: '/audio/pixabay',
       queryParameters: {'url': original.toString()},
     );
